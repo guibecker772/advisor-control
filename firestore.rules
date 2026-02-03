@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Função auxiliar para verificar se o usuário é dono do documento
+    function isOwner(ownerUid) {
+      return request.auth != null && request.auth.uid == ownerUid;
+    }
+    
+    // Função para verificar se o campo ownerUid corresponde ao usuário autenticado
+    function isValidOwner() {
+      return request.auth != null && request.resource.data.ownerUid == request.auth.uid;
+    }
+    
+    // Regras para clientes
+    match /clientes/{docId} {
+      allow read: if isOwner(resource.data.ownerUid);
+      allow create: if isValidOwner();
+      allow update, delete: if isOwner(resource.data.ownerUid);
+    }
+    
+    // Regras para prospects
+    match /prospects/{docId} {
+      allow read: if isOwner(resource.data.ownerUid);
+      allow create: if isValidOwner();
+      allow update, delete: if isOwner(resource.data.ownerUid);
+    }
+    
+    // Regras para cross
+    match /cross/{docId} {
+      allow read: if isOwner(resource.data.ownerUid);
+      allow create: if isValidOwner();
+      allow update, delete: if isOwner(resource.data.ownerUid);
+    }
+    
+    // Regras para reservas
+    match /reservas/{docId} {
+      allow read: if isOwner(resource.data.ownerUid);
+      allow create: if isValidOwner();
+      allow update, delete: if isOwner(resource.data.ownerUid);
+    }
+    
+    // Regras para custodiaReceita
+    match /custodiaReceita/{docId} {
+      allow read: if isOwner(resource.data.ownerUid);
+      allow create: if isValidOwner();
+      allow update, delete: if isOwner(resource.data.ownerUid);
+    }
+    
+    // Regras para planoReceitas
+    match /planoReceitas/{docId} {
+      allow read: if isOwner(resource.data.ownerUid);
+      allow create: if isValidOwner();
+      allow update, delete: if isOwner(resource.data.ownerUid);
+    }
+    
+    // Regras para salario
+    match /salario/{docId} {
+      allow read: if isOwner(resource.data.ownerUid);
+      allow create: if isValidOwner();
+      allow update, delete: if isOwner(resource.data.ownerUid);
+    }
+    
+    // Bloquear qualquer outra coleção
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
