@@ -9,6 +9,7 @@ import ClientesPage from './pages/clientes/ClientesPage';
 import ProspectsPage from './pages/prospects/ProspectsPage';
 import CrossPage from './pages/cross/CrossPage';
 import ReservasPage from './pages/reservas/ReservasPage';
+import OfertasPage from './pages/reservas/OfertasPage';
 import CustodiaReceitaPage from './pages/custodia-receita/CustodiaReceitaPage';
 import PlanoReceitasPage from './pages/plano-receitas/PlanoReceitasPage';
 import SalarioPage from './pages/salario/SalarioPage';
@@ -27,6 +28,7 @@ function App() {
             <Route path="captacao" element={<CaptacaoPage />} />
             <Route path="cross" element={<CrossPage />} />
             <Route path="reservas" element={<ReservasPage />} />
+            <Route path="ofertas" element={<OfertasPage />} />
             <Route path="custodia-receita" element={<CustodiaReceitaPage />} />
             <Route path="plano-receitas" element={<PlanoReceitasPage />} />
             <Route path="salario" element={<SalarioPage />} />

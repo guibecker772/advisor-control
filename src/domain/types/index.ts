@@ -13,6 +13,8 @@ export const clienteSchema = z.object({
   assessor: z.string().optional(),
   custodiaInicial: z.number().min(0).optional().default(0),
   custodiaAtual: z.number().min(0).optional().default(0),
+  codigoConta: z.string().optional().default(''),
+  perfilInvestidor: z.enum(['Regular', 'Qualificado', 'Profissional']).optional().default('Regular'),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
   createdAt: z.string().optional(),
@@ -21,6 +23,22 @@ export const clienteSchema = z.object({
 
 export type Cliente = z.output<typeof clienteSchema>;
 export type ClienteInput = z.input<typeof clienteSchema>;
+
+// ============== CLIENTE REUNIÃO (por mês/ano) ==============
+export const clienteReuniaoSchema = z.object({
+  id: z.string().optional(),
+  clienteId: z.string().min(1, 'Cliente é obrigatório'),
+  mes: z.number().min(1).max(12),
+  ano: z.number().min(2020).max(2100),
+  realizada: z.boolean().default(false),
+  observacoes: z.string().optional().default(''),
+  ownerUid: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type ClienteReuniao = z.output<typeof clienteReuniaoSchema>;
+export type ClienteReuniaoInput = z.input<typeof clienteReuniaoSchema>;
 
 // ============== PROSPECT ==============
 export const prospectSchema = z.object({
@@ -31,9 +49,14 @@ export const prospectSchema = z.object({
   telefone: z.string().optional(),
   origem: z.string().optional(),
   potencial: z.number().min(0).optional().default(0),
+  potencialTipo: z.enum(['captacao_liquida', 'transferencia_xp']).optional().default('captacao_liquida'),
   probabilidade: z.number().min(0).max(100).optional().default(50),
   dataContato: z.string().optional(),
   proximoContato: z.string().optional(),
+  proximoContatoHora: z.string().optional(),
+  realizadoValor: z.number().min(0).optional().default(0),
+  realizadoTipo: z.enum(['captacao_liquida', 'transferencia_xp']).optional().default('captacao_liquida'),
+  realizadoData: z.string().optional(),
   status: z.enum(['novo', 'em_contato', 'qualificado', 'proposta', 'ganho', 'perdido']).optional().default('novo'),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
@@ -44,6 +67,21 @@ export const prospectSchema = z.object({
 export type Prospect = z.output<typeof prospectSchema>;
 export type ProspectInput = z.input<typeof prospectSchema>;
 
+// ============== PROSPECT INTERAÇÃO (histórico de contatos) ==============
+export const prospectInteracaoSchema = z.object({
+  id: z.string().optional(),
+  prospectId: z.string().min(1, 'Prospect é obrigatório'),
+  tipo: z.enum(['ligacao', 'reuniao', 'email', 'whatsapp', 'visita', 'outro']).default('ligacao'),
+  data: z.string().min(1, 'Data é obrigatória'),
+  resumo: z.string().optional().default(''),
+  ownerUid: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type ProspectInteracao = z.output<typeof prospectInteracaoSchema>;
+export type ProspectInteracaoInput = z.input<typeof prospectInteracaoSchema>;
+
 // ============== CROSS SELLING ==============
 export const crossSchema = z.object({
   id: z.string().optional(),
@@ -53,8 +91,12 @@ export const crossSchema = z.object({
   categoria: z.enum(['seguros', 'previdencia', 'cambio', 'credito', 'consorcio', 'outros']).optional().default('outros'),
   valor: z.number().min(0).optional().default(0),
   comissao: z.number().min(0).optional().default(0),
+  pipeValue: z.number().min(0).optional().default(0),
+  realizedValue: z.number().min(0).optional().default(0),
   status: z.enum(['pendente', 'em_andamento', 'concluido', 'cancelado']).optional().default('pendente'),
   dataVenda: z.string().optional(),
+  mes: z.number().optional(),
+  ano: z.number().optional(),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
   createdAt: z.string().optional(),
@@ -83,6 +125,61 @@ export const reservaSchema = z.object({
 
 export type Reserva = z.output<typeof reservaSchema>;
 export type ReservaInput = z.input<typeof reservaSchema>;
+
+// ============== OFERTA/RESERVA DE ATIVOS ==============
+export const offerAllocationSchema = z.object({
+  clienteId: z.string().min(1, 'Cliente é obrigatório'),
+  clienteNome: z.string().optional(),
+  allocatedValue: z.number().min(0).default(0),
+  saldoOk: z.boolean().default(false),
+});
+
+export type OfferAllocation = z.output<typeof offerAllocationSchema>;
+
+export const offerReservationSchema = z.object({
+  id: z.string().optional(),
+  nomeAtivo: z.string().min(1, 'Nome do ativo é obrigatório'),
+  commissionMode: z.enum(['ROA_PERCENT', 'FIXED_REVENUE']).default('ROA_PERCENT'),
+  roaPercent: z.number().min(0).max(1).optional().default(0.02),
+  revenueFixed: z.number().min(0).optional().default(0),
+  repassePercent: z.number().min(0).max(1).optional().default(0.25),
+  irPercent: z.number().min(0).max(1).optional().default(0.19),
+  dataReserva: z.string().optional(),
+  dataLiquidacao: z.string().min(1, 'Data de liquidação é obrigatória'),
+  reservaEfetuada: z.boolean().default(false),
+  reservaLiquidada: z.boolean().default(false),
+  clientes: z.array(offerAllocationSchema).min(1, 'Adicione ao menos 1 cliente'),
+  observacoes: z.string().optional(),
+  ownerUid: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type OfferReservation = z.output<typeof offerReservationSchema>;
+export type OfferReservationInput = z.input<typeof offerReservationSchema>;
+
+// Funções de cálculo para ofertas
+export function calcOfferReservationTotals(reservation: OfferReservation) {
+  const totalAllocated = reservation.clientes.reduce((sum, c) => sum + (c.allocatedValue || 0), 0);
+  const revenueHouse = reservation.commissionMode === 'ROA_PERCENT'
+    ? totalAllocated * (reservation.roaPercent || 0)
+    : reservation.revenueFixed || 0;
+  const advisorGross = revenueHouse * (reservation.repassePercent || 0.25);
+  const advisorTax = advisorGross * (reservation.irPercent || 0.19);
+  const advisorNet = advisorGross - advisorTax;
+  const clientesSemSaldo = reservation.clientes.filter((c) => !c.saldoOk).length;
+  return { totalAllocated, revenueHouse, advisorGross, advisorTax, advisorNet, clientesSemSaldo };
+}
+
+export function calcOffersRevenueForMonth(reservations: OfferReservation[], mes: number, ano: number) {
+  return reservations
+    .filter((r) => {
+      if (!r.dataLiquidacao) return false;
+      const d = new Date(r.dataLiquidacao + 'T00:00:00');
+      return d.getMonth() + 1 === mes && d.getFullYear() === ano;
+    })
+    .reduce((sum, r) => sum + calcOfferReservationTotals(r).revenueHouse, 0);
+}
 
 // ============== CUSTÓDIA X RECEITA ==============
 export const custodiaReceitaSchema = z.object({

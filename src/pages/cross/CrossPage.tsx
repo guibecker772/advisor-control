@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { crossRepository, clienteRepository } from '../../services/repositories';
 import { crossSchema, type Cross, type CrossInput, type Cliente } from '../../domain/types';
-import { formatCurrency, calcularTotalCross, calcularComissaoCross } from '../../domain/calculations';
+import { formatCurrency } from '../../domain/calculations';
 import { DataTable, CurrencyCell, StatusBadge, ActionButtons } from '../../components/shared/DataTable';
 import { Modal, ConfirmDelete } from '../../components/shared/Modal';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
@@ -39,6 +39,12 @@ export default function CrossPage() {
   const [selectedCross, setSelectedCross] = useState<Cross | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Filtros
+  const [mesFiltro, setMesFiltro] = useState(new Date().getMonth() + 1);
+  const [anoFiltro, setAnoFiltro] = useState(new Date().getFullYear());
+  const [categoriaFiltro, setCategoriaFiltro] = useState<string>('');
+  const [statusFiltro, setStatusFiltro] = useState<string>('');
+
   const {
     register,
     handleSubmit,
@@ -51,6 +57,8 @@ export default function CrossPage() {
       status: 'pendente',
       valor: 0,
       comissao: 0,
+      pipeValue: 0,
+      realizedValue: 0,
     },
   });
 
@@ -95,6 +103,8 @@ export default function CrossPage() {
         status: 'pendente',
         valor: 0,
         comissao: 0,
+        pipeValue: 0,
+        realizedValue: 0,
         observacoes: '',
       });
     }
@@ -183,22 +193,35 @@ export default function CrossPage() {
       },
       {
         accessorKey: 'categoria',
-        header: 'Categoria',
+        header: 'Área',
         cell: (info) => {
           const cat = info.getValue() as string;
           const option = categoriaOptions.find((c) => c.value === cat);
-          return option?.label || cat;
+          return <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full text-xs font-medium">{option?.label || cat}</span>;
         },
       },
       {
-        accessorKey: 'valor',
-        header: 'Valor',
+        accessorKey: 'pipeValue',
+        header: 'Pipe (R$)',
         cell: (info) => <CurrencyCell value={info.getValue() as number} />,
       },
       {
-        accessorKey: 'comissao',
-        header: 'Comissão',
-        cell: (info) => <CurrencyCell value={info.getValue() as number} />,
+        accessorKey: 'realizedValue',
+        header: 'Realizado (R$)',
+        cell: (info) => {
+          const val = info.getValue() as number;
+          return <span className={val > 0 ? 'text-green-600 font-medium' : ''}><CurrencyCell value={val} /></span>;
+        },
+      },
+      {
+        id: 'saldo',
+        header: 'Saldo',
+        cell: (info) => {
+          const pipe = info.row.original.pipeValue || 0;
+          const realized = info.row.original.realizedValue || 0;
+          const saldo = pipe - realized;
+          return <span className={saldo < 0 ? 'text-red-600' : 'text-gray-600'}><CurrencyCell value={saldo} /></span>;
+        },
       },
       {
         accessorKey: 'dataVenda',
@@ -234,14 +257,51 @@ export default function CrossPage() {
     [clientes]
   );
 
+  // Filtrar crosses
+  const crossesFiltrados = useMemo(() => {
+    return crosses.filter((c) => {
+      // Filtro por mês/ano (usando dataVenda)
+      if (c.dataVenda) {
+        const dataDate = new Date(c.dataVenda + 'T00:00:00');
+        const mes = dataDate.getMonth() + 1;
+        const ano = dataDate.getFullYear();
+        if (mes !== mesFiltro || ano !== anoFiltro) return false;
+      }
+      // Filtro por categoria
+      if (categoriaFiltro && c.categoria !== categoriaFiltro) return false;
+      // Filtro por status
+      if (statusFiltro && c.status !== statusFiltro) return false;
+      return true;
+    });
+  }, [crosses, mesFiltro, anoFiltro, categoriaFiltro, statusFiltro]);
+
+  // KPIs totais
   const totais = useMemo(() => {
+    const pipeTotal = crossesFiltrados.reduce((sum, c) => sum + (c.pipeValue || 0), 0);
+    const realizedTotal = crossesFiltrados.reduce((sum, c) => sum + (c.realizedValue || 0), 0);
     return {
-      total: crosses.length,
-      concluidos: crosses.filter((c) => c.status === 'concluido').length,
-      valorTotal: calcularTotalCross(crosses),
-      comissaoTotal: calcularComissaoCross(crosses),
+      total: crossesFiltrados.length,
+      concluidos: crossesFiltrados.filter((c) => c.status === 'concluido').length,
+      pipeTotal,
+      realizedTotal,
+      saldo: pipeTotal - realizedTotal,
     };
-  }, [crosses]);
+  }, [crossesFiltrados]);
+
+  // KPIs por área (categoria)
+  const kpisPorArea = useMemo(() => {
+    const mapa: Record<string, { pipe: number; realized: number; count: number }> = {};
+    crossesFiltrados.forEach((c) => {
+      const cat = c.categoria || 'outros';
+      if (!mapa[cat]) mapa[cat] = { pipe: 0, realized: 0, count: 0 };
+      mapa[cat].pipe += c.pipeValue || 0;
+      mapa[cat].realized += c.realizedValue || 0;
+      mapa[cat].count += 1;
+    });
+    return Object.entries(mapa)
+      .map(([cat, vals]) => ({ categoria: cat, ...vals }))
+      .sort((a, b) => b.pipe - a.pipe);
+  }, [crossesFiltrados]);
 
   if (loading) {
     return (
@@ -256,20 +316,37 @@ export default function CrossPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Cross Selling</h1>
-          <p className="text-gray-600">Vendas cruzadas de produtos</p>
+          <p className="text-gray-600">Vendas cruzadas de produtos — Pipe x Realizado</p>
         </div>
-        <button
-          onClick={() => openModal()}
-          className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Novo Cross
-        </button>
+        <div className="flex items-center space-x-4">
+          <select value={mesFiltro} onChange={(e) => setMesFiltro(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
+            {Array.from({ length: 12 }, (_, i) => (<option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('pt-BR', { month: 'long' })}</option>))}
+          </select>
+          <select value={anoFiltro} onChange={(e) => setAnoFiltro(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
+            {[2024, 2025, 2026, 2027].map((a) => (<option key={a} value={a}>{a}</option>))}
+          </select>
+          <select value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <option value="">Todas Áreas</option>
+            {categoriaOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
+          </select>
+          <select value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
+            <option value="">Todos Status</option>
+            {statusOptions.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
+          </select>
+          <button
+            onClick={() => openModal()}
+            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Novo Cross
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* KPIs Totais */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Total de Vendas</p>
+          <p className="text-sm text-gray-600">Registros</p>
           <p className="text-2xl font-bold text-gray-900">{totais.total}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
@@ -277,17 +354,41 @@ export default function CrossPage() {
           <p className="text-2xl font-bold text-green-600">{totais.concluidos}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Valor Total</p>
-          <p className="text-2xl font-bold text-blue-600">{formatCurrency(totais.valorTotal)}</p>
+          <p className="text-sm text-gray-600">Total Pipe</p>
+          <p className="text-2xl font-bold text-blue-600">{formatCurrency(totais.pipeTotal)}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Comissão Total</p>
-          <p className="text-2xl font-bold text-indigo-600">{formatCurrency(totais.comissaoTotal)}</p>
+          <p className="text-sm text-gray-600">Total Realizado</p>
+          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.realizedTotal)}</p>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow">
+          <p className="text-sm text-gray-600">Saldo (Aberto)</p>
+          <p className={`text-2xl font-bold ${totais.saldo >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>{formatCurrency(totais.saldo)}</p>
         </div>
       </div>
 
+      {/* KPIs por Área */}
+      {kpisPorArea.length > 0 && (
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h3 className="font-semibold text-gray-900 mb-3">Pipe x Realizado por Área</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {kpisPorArea.map((area) => {
+              const catLabel = categoriaOptions.find((c) => c.value === area.categoria)?.label || area.categoria;
+              return (
+                <div key={area.categoria} className="border rounded-lg p-3 bg-gray-50">
+                  <p className="text-xs font-semibold text-indigo-700 uppercase">{catLabel}</p>
+                  <p className="text-sm text-gray-600">Pipe: <span className="font-bold text-blue-600">{formatCurrency(area.pipe)}</span></p>
+                  <p className="text-sm text-gray-600">Real: <span className="font-bold text-green-600">{formatCurrency(area.realized)}</span></p>
+                  <p className="text-xs text-gray-400">{area.count} registro(s)</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <DataTable
-        data={crosses}
+        data={crossesFiltrados}
         columns={columns}
         searchPlaceholder="Buscar vendas..."
       />
@@ -312,7 +413,7 @@ export default function CrossPage() {
               error={errors.produto?.message}
             />
             <Select
-              label="Categoria"
+              label="Área/Categoria"
               options={categoriaOptions}
               {...register('categoria')}
               error={errors.categoria?.message}
@@ -324,7 +425,21 @@ export default function CrossPage() {
               error={errors.status?.message}
             />
             <Input
-              label="Valor (R$)"
+              label="Pipe (R$)"
+              type="number"
+              step="0.01"
+              {...register('pipeValue', { valueAsNumber: true })}
+              error={errors.pipeValue?.message}
+            />
+            <Input
+              label="Realizado (R$)"
+              type="number"
+              step="0.01"
+              {...register('realizedValue', { valueAsNumber: true })}
+              error={errors.realizedValue?.message}
+            />
+            <Input
+              label="Valor Produto (R$)"
               type="number"
               step="0.01"
               {...register('valor', { valueAsNumber: true })}

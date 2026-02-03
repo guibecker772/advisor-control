@@ -5,9 +5,12 @@
 
 import type { 
   Cliente, 
-  Prospect, 
+  ClienteReuniao,
+  Prospect,
+  ProspectInteracao,
   Cross, 
   Reserva, 
+  OfferReservation,
   CustodiaReceita, 
   PlanoReceitas, 
   Salario,
@@ -116,9 +119,12 @@ export function createRepository<T extends { id?: string; ownerUid?: string; mes
 
 // Exporta repositórios específicos
 export const clienteRepository = createRepository<Cliente>('clientes');
+export const clienteReuniaoRepository = createRepository<ClienteReuniao>('cliente_reunioes');
 export const prospectRepository = createRepository<Prospect>('prospects');
+export const prospectInteracaoRepository = createRepository<ProspectInteracao>('prospect_interacoes');
 export const crossRepository = createRepository<Cross>('cross');
 export const reservaRepository = createRepository<Reserva>('reservas');
+export const offerReservationRepository = createRepository<OfferReservation>('offer_reservations');
 export const custodiaReceitaRepository = createRepository<CustodiaReceita>('custodia_receita');
 export const planoReceitasRepository = createRepository<PlanoReceitas>('plano_receitas');
 export const salarioRepository = createRepository<Salario>('salarios');

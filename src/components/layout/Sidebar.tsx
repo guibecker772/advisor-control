@@ -9,6 +9,7 @@ import {
   Target,
   DollarSign,
   ArrowDownUp,
+  Package,
 } from 'lucide-react';
 
 const navigation = [
@@ -17,7 +18,8 @@ const navigation = [
   { name: 'Prospects', href: '/prospects', icon: UserPlus },
   { name: 'Captação', href: '/captacao', icon: ArrowDownUp },
   { name: 'Cross Selling', href: '/cross', icon: Repeat },
-  { name: 'Reservas', href: '/reservas', icon: Calendar },
+  { name: 'Reservas (legado)', href: '/reservas', icon: Calendar },
+  { name: 'Ofertas/Ativos', href: '/ofertas', icon: Package },
   { name: 'Custódia x Receita', href: '/custodia-receita', icon: TrendingUp },
   { name: 'Plano de Receitas', href: '/plano-receitas', icon: Target },
   { name: 'Salário', href: '/salario', icon: DollarSign },

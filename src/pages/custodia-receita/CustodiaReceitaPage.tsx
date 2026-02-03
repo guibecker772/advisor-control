@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Plus } from 'lucide-react';
+import { Plus, Package, Users, Sparkles, CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { custodiaReceitaRepository, clienteRepository } from '../../services/repositories';
-import { custodiaReceitaSchema, type CustodiaReceita, type CustodiaReceitaInput, type Cliente } from '../../domain/types';
+import { custodiaReceitaRepository, clienteRepository, offerReservationRepository } from '../../services/repositories';
+import { custodiaReceitaSchema, calcOffersRevenueForMonth, type CustodiaReceita, type CustodiaReceitaInput, type Cliente, type OfferReservation } from '../../domain/types';
 import {
   formatCurrency,
   formatPercent,
@@ -26,6 +26,7 @@ export default function CustodiaReceitaPage() {
   const { user } = useAuth();
   const [registros, setRegistros] = useState<CustodiaReceita[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [ofertas, setOfertas] = useState<OfferReservation[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -79,12 +80,14 @@ export default function CustodiaReceitaPage() {
     const loadData = async () => {
       try {
         setLoading(true);
-        const [registroData, clienteData] = await Promise.all([
+        const [registroData, clienteData, ofertasData] = await Promise.all([
           custodiaReceitaRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
           clienteRepository.getAll(user.uid),
+          offerReservationRepository.getAll(user.uid),
         ]);
         setRegistros(registroData);
         setClientes(clienteData);
+        setOfertas(ofertasData);
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
         toast.error('Erro ao carregar dados');
@@ -95,6 +98,77 @@ export default function CustodiaReceitaPage() {
 
     loadData();
   }, [user, mesFiltro, anoFiltro]);
+
+  // Receita derivada das Ofertas/Reservas liquidadas no mês/ano
+  const receitaOfertas = useMemo(() => {
+    return calcOffersRevenueForMonth(ofertas, mesFiltro, anoFiltro);
+  }, [ofertas, mesFiltro, anoFiltro]);
+
+  // ====== SUGESTÕES AUTOMÁTICAS (Etapa 6) ======
+  // Custódia sugerida = soma de custodiaAtual de todos os clientes ativos
+  const custodiaSugerida = useMemo(() => {
+    return clientes
+      .filter((c) => c.status === 'ativo')
+      .reduce((sum, c) => sum + (c.custodiaAtual || 0), 0);
+  }, [clientes]);
+
+  // Receita sugerida de ofertas = já calculada em receitaOfertas
+  const receitaOfertasSugerida = receitaOfertas;
+
+  // Handler para aplicar valores automáticos
+  const aplicarValoresAutomaticos = async () => {
+    if (!user) return;
+    try {
+      setSaving(true);
+      
+      // Verificar se já existe registro "Geral" para o mês/ano
+      const registroGeral = registros.find((r) => !r.clienteId || r.clienteId === '');
+      
+      if (registroGeral?.id) {
+        // Atualizar registro existente apenas com custódia
+        const updated = await custodiaReceitaRepository.update(
+          registroGeral.id,
+          {
+            custodiaFim: custodiaSugerida,
+            // Nota: receita de ofertas é derivada, não gravamos duplicado
+          },
+          user.uid
+        );
+        if (updated) {
+          setRegistros((prev) => prev.map((r) => (r.id === registroGeral.id ? updated : r)));
+        }
+      } else {
+        // Criar novo registro "Geral" com valores sugeridos
+        const created = await custodiaReceitaRepository.create(
+          {
+            clienteId: '',
+            clienteNome: 'Geral',
+            mes: mesFiltro,
+            ano: anoFiltro,
+            custodiaInicio: custodiaSugerida,
+            custodiaFim: custodiaSugerida,
+            captacaoBruta: 0,
+            resgate: 0,
+            receitaRV: 0,
+            receitaRF: 0,
+            receitaCOE: 0,
+            receitaFundos: 0,
+            receitaPrevidencia: 0,
+            receitaOutros: 0,
+          },
+          user.uid
+        );
+        setRegistros((prev) => [...prev, created]);
+      }
+      
+      toast.success('Valores automáticos aplicados com sucesso!');
+    } catch (error) {
+      console.error('Erro ao aplicar valores:', error);
+      toast.error('Erro ao aplicar valores automáticos');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const clienteOptions = useMemo(
     () => [
@@ -245,7 +319,8 @@ export default function CustodiaReceitaPage() {
 
   const totais = useMemo(() => {
     const custodiaTotal = registros.reduce((sum, r) => sum + (r.custodiaFim || 0), 0);
-    const receitaTotal = calcularReceitaTotal(registros);
+    const receitaRegistros = calcularReceitaTotal(registros);
+    const receitaTotal = receitaRegistros + receitaOfertas;
     const captacaoTotal = calcularCaptacaoTotal(registros);
     const custodiaMedia = registros.reduce((sum, r) => sum + ((r.custodiaInicio + r.custodiaFim) / 2), 0);
     const roaMedio = custodiaMedia > 0 ? (receitaTotal / custodiaMedia) * 100 : 0;
@@ -253,11 +328,13 @@ export default function CustodiaReceitaPage() {
     return {
       registros: registros.length,
       custodiaTotal,
+      receitaRegistros,
+      receitaOfertas,
       receitaTotal,
       captacaoTotal,
       roaMedio,
     };
-  }, [registros]);
+  }, [registros, receitaOfertas]);
 
   if (loading) {
     return (
@@ -293,7 +370,7 @@ export default function CustodiaReceitaPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
         <div className="bg-white p-4 rounded-lg shadow">
           <p className="text-sm text-gray-600">Registros</p>
           <p className="text-2xl font-bold text-gray-900">{totais.registros}</p>
@@ -309,12 +386,61 @@ export default function CustodiaReceitaPage() {
           </p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Receita Total</p>
-          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.receitaTotal)}</p>
+          <p className="text-sm text-gray-600">Receita Registros</p>
+          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.receitaRegistros)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">ROA Médio</p>
-          <p className="text-2xl font-bold text-purple-600">{formatPercent(totais.roaMedio)}</p>
+        <div className="bg-white p-4 rounded-lg shadow border-l-4 border-teal-500">
+          <p className="text-sm text-gray-600 flex items-center gap-1">
+            <Package className="w-4 h-4" /> Ofertas/Reservas
+          </p>
+          <p className="text-2xl font-bold text-teal-600">{formatCurrency(totais.receitaOfertas)}</p>
+        </div>
+        <div className="bg-white p-4 rounded-lg shadow bg-gradient-to-r from-green-50 to-teal-50">
+          <p className="text-sm text-gray-600 font-semibold">Receita Total</p>
+          <p className="text-2xl font-bold text-green-700">{formatCurrency(totais.receitaTotal)}</p>
+        </div>
+      </div>
+
+      <div className="bg-white p-4 rounded-lg shadow">
+        <p className="text-sm text-gray-600">ROA Médio</p>
+        <p className="text-2xl font-bold text-purple-600">{formatPercent(totais.roaMedio)}</p>
+      </div>
+
+      {/* ====== SUGESTÕES AUTOMÁTICAS (Etapa 6) ====== */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-5 rounded-lg shadow border border-indigo-100">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-indigo-600" />
+            <h3 className="text-lg font-semibold text-indigo-900">Sugestões Automáticas</h3>
+          </div>
+          <button
+            onClick={aplicarValoresAutomaticos}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50 font-medium"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            {saving ? 'Aplicando...' : 'Aplicar valores automáticos'}
+          </button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white p-4 rounded-lg border border-blue-200">
+            <div className="flex items-center gap-2 mb-1">
+              <Users className="w-4 h-4 text-blue-600" />
+              <span className="text-xs font-medium text-blue-600 bg-blue-100 px-2 py-0.5 rounded">AUTO: Clientes</span>
+            </div>
+            <p className="text-sm text-gray-600">Custódia Sugerida</p>
+            <p className="text-2xl font-bold text-blue-700">{formatCurrency(custodiaSugerida)}</p>
+            <p className="text-xs text-gray-500 mt-1">Soma da custódia atual de {clientes.filter(c => c.status === 'ativo').length} clientes ativos</p>
+          </div>
+          <div className="bg-white p-4 rounded-lg border border-teal-200">
+            <div className="flex items-center gap-2 mb-1">
+              <Package className="w-4 h-4 text-teal-600" />
+              <span className="text-xs font-medium text-teal-600 bg-teal-100 px-2 py-0.5 rounded">AUTO: Reservas</span>
+            </div>
+            <p className="text-sm text-gray-600">Receita Sugerida (Ofertas)</p>
+            <p className="text-2xl font-bold text-teal-700">{formatCurrency(receitaOfertasSugerida)}</p>
+            <p className="text-xs text-gray-500 mt-1">Ofertas liquidadas em {getNomeMes(mesFiltro)}/{anoFiltro}</p>
+          </div>
         </div>
       </div>
 
