@@ -1,128 +1,318 @@
 @import "tailwindcss";
+@import "./theme/tokens.css";
 
-/* Custom scrollbar */
+/* ===========================================
+   TEMA ESCURO GLOBAL - ADVISOR CONTROL
+   Overrides para bg-white e cores claras
+   =========================================== */
+
+/* ===== BODY/HTML BASE ===== */
+html, body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* ===== OVERRIDE GLOBAL: bg-white → tema escuro ===== */
+.bg-white {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+}
+
+/* ===== OVERRIDE: text-gray-XXX para tema escuro ===== */
+.text-gray-900, .text-gray-800, .text-gray-700 {
+  color: var(--color-text) !important;
+}
+.text-gray-600, .text-gray-500 {
+  color: var(--color-text-secondary) !important;
+}
+.text-gray-400, .text-gray-300 {
+  color: var(--color-text-muted) !important;
+}
+
+/* ===== OVERRIDE: bg-gray-XXX para tema escuro ===== */
+.bg-gray-50, .bg-gray-100 {
+  background-color: var(--color-surface-2) !important;
+}
+.bg-gray-200, .bg-gray-300 {
+  background-color: var(--color-surface-3) !important;
+}
+
+/* ===== OVERRIDE: borders ===== */
+.border-gray-200, .border-gray-300 {
+  border-color: var(--color-border) !important;
+}
+
+/* ===== OVERRIDE: divide colors ===== */
+.divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--color-border) !important;
+}
+
+/* ===== OVERRIDE: HOVER STATES - tema escuro sutil ===== */
+/* Hovers cinza claro → sutil escuro */
+.hover\:bg-gray-50:hover,
+.hover\:bg-gray-100:hover,
+.hover\:bg-gray-200:hover {
+  background-color: var(--hover-light) !important;
+}
+
+/* Hovers coloridos claros → versões escuras sutis */
+.hover\:bg-blue-50:hover {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+.hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+.hover\:bg-green-50:hover {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+.hover\:bg-teal-50:hover {
+  background-color: rgba(20, 184, 166, 0.12) !important;
+}
+.hover\:bg-orange-50:hover {
+  background-color: rgba(249, 115, 22, 0.12) !important;
+}
+.hover\:bg-purple-50:hover {
+  background-color: rgba(168, 85, 247, 0.12) !important;
+}
+.hover\:bg-yellow-50:hover {
+  background-color: rgba(234, 179, 8, 0.12) !important;
+}
+
+/* Badges com hover */
+.hover\:bg-orange-200:hover {
+  background-color: rgba(249, 115, 22, 0.20) !important;
+}
+
+/* ===== OVERRIDE: shadows para tema escuro ===== */
+.shadow, .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.4);
+}
+
+/* ===== OVERRIDE: ring colors ===== */
+.ring-gray-200, .ring-gray-300 {
+  --tw-ring-color: var(--color-border) !important;
+}
+
+/* ===== OVERRIDE: placeholder colors ===== */
+.placeholder-gray-400::placeholder, .placeholder-gray-500::placeholder {
+  color: var(--color-text-muted) !important;
+}
+
+/* Dark Theme Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: var(--color-surface);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
+  background: var(--color-surface-3);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #a1a1a1;
+  background: var(--color-text-muted);
 }
 
-/* Custom focus styles */
+/* Custom focus styles - Dourado */
 @layer base {
   *:focus {
     @apply outline-none;
   }
   
   *:focus-visible {
-    @apply ring-2 ring-blue-500 ring-offset-2;
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-gold);
+  }
+  
+  /* Input focus override */
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--color-gold) !important;
+    box-shadow: 0 0 0 1px var(--color-gold);
+  }
+  
+  /* ===== INPUTS/SELECTS NATIVOS - Dark Theme ===== */
+  input, select, textarea {
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    border-radius: 0.5rem;
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--color-text-muted);
+  }
+  
+  /* Select dropdown arrow color fix */
+  select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239BA5B8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  select option {
+    background-color: var(--color-surface-2);
+    color: var(--color-text);
   }
 }
 
-/* Table styles */
+/* Table styles - Dark Theme */
 @layer components {
   .table-container {
-    @apply overflow-x-auto rounded-lg border border-gray-200;
+    @apply overflow-x-auto rounded-lg;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-subtle);
   }
   
   .table-header {
-    @apply bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+    @apply text-left text-xs font-medium uppercase tracking-wider;
+    background-color: var(--color-surface-2);
+    color: var(--color-text-muted);
   }
   
   .table-cell {
-    @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+    @apply px-6 py-4 whitespace-nowrap text-sm;
+    color: var(--color-text);
+  }
+  
+  .table-row {
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  
+  .table-row:hover {
+    background-color: var(--row-hover);
+  }
+  
+  .table-row.selected {
+    background-color: var(--row-selected);
   }
 }
 
-/* Card styles */
+/* ===== OVERRIDE GLOBAL: tr hover em tabelas ===== */
+table tbody tr:hover,
+.bg-white tbody tr:hover {
+  background-color: var(--row-hover) !important;
+}
+
+/* Card styles - Dark Theme */
 @layer components {
   .card {
-    @apply bg-white rounded-lg shadow p-6;
+    @apply rounded-xl p-6;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-subtle);
   }
   
   .card-header {
-    @apply text-lg font-semibold text-gray-900 mb-4;
+    @apply text-lg font-semibold mb-4;
+    color: var(--color-text);
   }
 }
 
-/* Button variants */
+/* Button variants - Dark Theme */
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply px-4 py-2 rounded-md font-medium transition-colors focus:outline-none;
   }
   
   .btn-primary {
-    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+    background-color: var(--color-gold);
+    color: var(--color-text-inverse);
+  }
+  .btn-primary:hover {
+    background-color: var(--color-gold-hover);
+  }
+  .btn-primary:focus-visible {
+    box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-gold);
   }
   
   .btn-secondary {
-    @apply bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500;
+    background-color: var(--color-surface-2);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+  }
+  .btn-secondary:hover {
+    background-color: var(--color-surface-3);
   }
   
   .btn-danger {
-    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+    @apply bg-red-600 hover:bg-red-700;
+    color: white;
   }
   
   .btn-success {
-    @apply bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+    @apply bg-green-600 hover:bg-green-700;
+    color: white;
   }
 }
 
-/* Form styles */
+/* Form styles - Dark Theme */
 @layer components {
   .form-input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500;
+    @apply w-full px-3 py-2 rounded-md shadow-sm;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+  .form-input::placeholder {
+    color: var(--color-text-muted);
+  }
+  .form-input:focus {
+    border-color: var(--color-gold);
+    box-shadow: 0 0 0 1px var(--color-gold);
+    outline: none;
   }
   
   .form-label {
-    @apply block text-sm font-medium text-gray-700 mb-1;
+    @apply block text-sm font-medium mb-1;
+    color: var(--color-text-secondary);
   }
   
   .form-error {
-    @apply text-sm text-red-600 mt-1;
+    @apply text-sm mt-1;
+    color: var(--color-danger);
   }
 }
 
-/* Status badge colors */
+/* Status badge colors - Dark Theme (mais suaves) */
 @layer components {
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
   
   .badge-green {
-    @apply bg-green-100 text-green-800;
+    background-color: var(--color-success-bg);
+    color: var(--color-success);
   }
   
   .badge-yellow {
-    @apply bg-yellow-100 text-yellow-800;
+    background-color: var(--color-warning-bg);
+    color: var(--color-warning);
   }
   
   .badge-red {
-    @apply bg-red-100 text-red-800;
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger);
   }
   
   .badge-blue {
-    @apply bg-blue-100 text-blue-800;
+    background-color: var(--color-info-bg);
+    color: var(--color-info);
   }
   
   .badge-gray {
-    @apply bg-gray-100 text-gray-800;
+    background-color: var(--color-surface-2);
+    color: var(--color-text-secondary);
   }
   
   .badge-purple {
-    @apply bg-purple-100 text-purple-800;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #A78BFA;
   }
 }
 
@@ -166,4 +356,88 @@
   body {
     background: white;
   }
+}
+
+/* FullCalendar Custom Styles - Dark Theme */
+.fc-custom {
+  --fc-border-color: var(--color-border);
+  --fc-today-bg-color: var(--color-gold-bg);
+  --fc-event-border-color: transparent;
+  --fc-now-indicator-color: var(--color-danger);
+  --fc-page-bg-color: var(--color-surface);
+  --fc-neutral-bg-color: var(--color-surface-2);
+  --fc-list-event-hover-bg-color: var(--color-surface-hover);
+}
+
+.fc-custom .fc-col-header-cell {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  @apply py-3 text-sm font-medium;
+}
+
+.fc-custom .fc-daygrid-day-number {
+  color: var(--color-text);
+  @apply text-sm p-2;
+}
+
+.fc-custom .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  background-color: var(--color-gold);
+  color: var(--color-text-inverse);
+  @apply rounded-full w-7 h-7 flex items-center justify-center;
+}
+
+.fc-custom .fc-event {
+  @apply rounded-md px-2 py-1 text-xs font-medium border-0 cursor-pointer;
+}
+
+.fc-custom .fc-event:hover {
+  @apply opacity-90;
+}
+
+.fc-custom .fc-timegrid-slot {
+  @apply h-12;
+}
+
+.fc-custom .fc-timegrid-slot-label {
+  color: var(--color-text-muted);
+  @apply text-xs;
+}
+
+.fc-custom .fc-daygrid-more-link {
+  color: var(--color-gold);
+  @apply text-xs font-medium hover:underline;
+}
+
+.fc-custom .fc-highlight {
+  background-color: var(--color-gold-bg);
+}
+
+.fc-custom .fc-scrollgrid {
+  @apply border-0;
+}
+
+.fc-custom .fc-scrollgrid-section-header > th {
+  @apply border-0;
+}
+
+.fc-custom .fc-timegrid-now-indicator-line {
+  border-color: var(--color-danger);
+  @apply border-t-2;
+}
+
+.fc-custom .fc-timegrid-now-indicator-arrow {
+  border-color: var(--color-danger);
+}
+
+/* FullCalendar table cells */
+.fc-custom .fc-daygrid-day {
+  background-color: var(--color-surface);
+}
+
+.fc-custom .fc-daygrid-day:hover {
+  background-color: var(--color-surface-hover);
+}
+
+.fc-custom .fc-day-other .fc-daygrid-day-number {
+  color: var(--color-text-muted);
 }

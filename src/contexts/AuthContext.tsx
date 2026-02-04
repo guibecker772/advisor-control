@@ -48,12 +48,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, _password: string) => {
     console.log('🔓 Login mockado:', email);
     setUser(MOCK_USER);
   };
 
-  const register = async (email: string, password: string) => {
+  const register = async (email: string, _password: string) => {
     console.log('🔓 Registro mockado:', email);
     setUser(MOCK_USER);
   };

@@ -4,12 +4,11 @@ import {
   Users,
   UserPlus,
   Repeat,
-  Calendar,
-  TrendingUp,
-  Target,
   DollarSign,
   ArrowDownUp,
   Package,
+  Goal,
+  Calendar,
 } from 'lucide-react';
 
 const navigation = [
@@ -18,10 +17,9 @@ const navigation = [
   { name: 'Prospects', href: '/prospects', icon: UserPlus },
   { name: 'Captação', href: '/captacao', icon: ArrowDownUp },
   { name: 'Cross Selling', href: '/cross', icon: Repeat },
-  { name: 'Reservas (legado)', href: '/reservas', icon: Calendar },
   { name: 'Ofertas/Ativos', href: '/ofertas', icon: Package },
-  { name: 'Custódia x Receita', href: '/custodia-receita', icon: TrendingUp },
-  { name: 'Plano de Receitas', href: '/plano-receitas', icon: Target },
+  { name: 'Agendas', href: '/agendas', icon: Calendar },
+  { name: 'Metas', href: '/metas', icon: Goal },
   { name: 'Salário', href: '/salario', icon: DollarSign },
 ];
 

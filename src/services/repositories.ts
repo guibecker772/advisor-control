@@ -14,8 +14,15 @@ import type {
   CustodiaReceita, 
   PlanoReceitas, 
   Salario,
-  CaptacaoLancamento 
+  CaptacaoLancamento,
+  MonthlyGoals 
 } from '../domain/types';
+import type {
+  CalendarEvent,
+  CalendarAccount,
+  Notification,
+  EventReminder,
+} from '../domain/types/calendar';
 
 // Gerar ID único
 function generateId(): string {
@@ -129,3 +136,10 @@ export const custodiaReceitaRepository = createRepository<CustodiaReceita>('cust
 export const planoReceitasRepository = createRepository<PlanoReceitas>('plano_receitas');
 export const salarioRepository = createRepository<Salario>('salarios');
 export const captacaoLancamentoRepository = createRepository<CaptacaoLancamento>('captacoes');
+export const monthlyGoalsRepository = createRepository<MonthlyGoals>('monthly_goals');
+
+// ============== REPOSITORIES PARA AGENDAS ==============
+export const calendarEventRepository = createRepository<CalendarEvent>('calendar_events');
+export const calendarAccountRepository = createRepository<CalendarAccount>('calendar_accounts');
+export const notificationRepository = createRepository<Notification>('notifications');
+export const eventReminderRepository = createRepository<EventReminder>('event_reminders');

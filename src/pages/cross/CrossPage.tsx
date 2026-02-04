@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { crossRepository, clienteRepository } from '../../services/repositories';
 import { crossSchema, type Cross, type CrossInput, type Cliente } from '../../domain/types';
-import { formatCurrency } from '../../domain/calculations';
+import { formatCurrency, isCrossConcluido } from '../../domain/calculations';
 import { DataTable, CurrencyCell, StatusBadge, ActionButtons } from '../../components/shared/DataTable';
 import { Modal, ConfirmDelete } from '../../components/shared/Modal';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
@@ -55,7 +55,6 @@ export default function CrossPage() {
     defaultValues: {
       categoria: 'outros',
       status: 'pendente',
-      valor: 0,
       comissao: 0,
       pipeValue: 0,
       realizedValue: 0,
@@ -101,7 +100,6 @@ export default function CrossPage() {
         produto: '',
         categoria: 'outros',
         status: 'pendente',
-        valor: 0,
         comissao: 0,
         pipeValue: 0,
         realizedValue: 0,
@@ -120,8 +118,22 @@ export default function CrossPage() {
 
       // Adicionar nome do cliente
       const cliente = clientes.find((c) => c.id === parsed.clienteId);
+      
+      // Extrair mes/ano de dataVenda para facilitar filtros
+      let mes = parsed.mes;
+      let ano = parsed.ano;
+      if (parsed.dataVenda && (!mes || !ano)) {
+        const d = new Date(parsed.dataVenda + 'T00:00:00');
+        if (!isNaN(d.getTime())) {
+          mes = d.getMonth() + 1;
+          ano = d.getFullYear();
+        }
+      }
+      
       const dataWithCliente = {
         ...parsed,
+        mes,
+        ano,
         clienteNome: cliente?.nome || '',
       };
 
@@ -214,13 +226,15 @@ export default function CrossPage() {
         },
       },
       {
-        id: 'saldo',
-        header: 'Saldo',
+        id: 'comissao',
+        header: 'Comissão (R$)',
         cell: (info) => {
-          const pipe = info.row.original.pipeValue || 0;
-          const realized = info.row.original.realizedValue || 0;
-          const saldo = pipe - realized;
-          return <span className={saldo < 0 ? 'text-red-600' : 'text-gray-600'}><CurrencyCell value={saldo} /></span>;
+          const status = info.row.original.status;
+          if (status !== 'concluido') {
+            return <span className="text-gray-400">—</span>;
+          }
+          const comissao = info.row.original.comissao ?? 0;
+          return <span className="text-green-600 font-medium">{formatCurrency(Number.isFinite(comissao) ? comissao : 0)}</span>;
         },
       },
       {
@@ -279,12 +293,19 @@ export default function CrossPage() {
   const totais = useMemo(() => {
     const pipeTotal = crossesFiltrados.reduce((sum, c) => sum + (c.pipeValue || 0), 0);
     const realizedTotal = crossesFiltrados.reduce((sum, c) => sum + (c.realizedValue || 0), 0);
+    // Comissão Total: soma apenas registros concluídos
+    const comissaoTotal = crossesFiltrados
+      .filter((c) => isCrossConcluido(c.status))
+      .reduce((sum, c) => {
+        const val = c.comissao ?? 0;
+        return sum + (Number.isFinite(val) ? val : 0);
+      }, 0);
     return {
       total: crossesFiltrados.length,
-      concluidos: crossesFiltrados.filter((c) => c.status === 'concluido').length,
+      concluidos: crossesFiltrados.filter((c) => isCrossConcluido(c.status)).length,
       pipeTotal,
       realizedTotal,
-      saldo: pipeTotal - realizedTotal,
+      comissaoTotal,
     };
   }, [crossesFiltrados]);
 
@@ -362,8 +383,8 @@ export default function CrossPage() {
           <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.realizedTotal)}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Saldo (Aberto)</p>
-          <p className={`text-2xl font-bold ${totais.saldo >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>{formatCurrency(totais.saldo)}</p>
+          <p className="text-sm text-gray-600">Comissão Total (Fechados)</p>
+          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.comissaoTotal)}</p>
         </div>
       </div>
 
@@ -437,13 +458,6 @@ export default function CrossPage() {
               step="0.01"
               {...register('realizedValue', { valueAsNumber: true })}
               error={errors.realizedValue?.message}
-            />
-            <Input
-              label="Valor Produto (R$)"
-              type="number"
-              step="0.01"
-              {...register('valor', { valueAsNumber: true })}
-              error={errors.valor?.message}
             />
             <Input
               label="Comissão (R$)"

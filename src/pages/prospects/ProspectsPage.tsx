@@ -242,11 +242,20 @@ export default function ProspectsPage() {
       },
       {
         accessorKey: 'potencial',
-        header: 'Potencial (Pipe)',
+        header: 'Pipe Atual',
         cell: (info) => {
+          const potencial = info.getValue() as number;
+          const realizado = info.row.original.realizadoValor || 0;
+          const pipeAtual = Math.max(0, potencial - realizado);
           const tipo = info.row.original.potencialTipo || 'captacao_liquida';
           const label = tipo === 'transferencia_xp' ? 'TXP' : 'CL';
-          return <span><CurrencyCell value={info.getValue() as number} /> <span className="text-xs text-gray-500">({label})</span></span>;
+          const excedeu = realizado > potencial;
+          return (
+            <span className={excedeu ? 'text-orange-600' : ''}>
+              <CurrencyCell value={pipeAtual} /> <span className="text-xs text-gray-500">({label})</span>
+              {excedeu && <span className="ml-1 text-xs bg-orange-100 text-orange-700 px-1 rounded">&gt;100%</span>}
+            </span>
+          );
         },
       },
       {
@@ -288,18 +297,22 @@ export default function ProspectsPage() {
 
   const totais = useMemo(() => {
     const ativos = prospects.filter((p) => !['ganho', 'perdido'].includes(p.status));
-    // Pipe (potencial)
-    const pipeCL = ativos.filter((p) => p.potencialTipo !== 'transferencia_xp').reduce((sum, p) => sum + (p.potencial || 0), 0);
-    const pipeTXP = ativos.filter((p) => p.potencialTipo === 'transferencia_xp').reduce((sum, p) => sum + (p.potencial || 0), 0);
-    // Realizado
+    // Pipe Atual = max(0, potencial - realizado) -- pipe diminui com realizado
+    const pipeAtualCL = ativos
+      .filter((p) => p.potencialTipo !== 'transferencia_xp')
+      .reduce((sum, p) => sum + Math.max(0, (p.potencial || 0) - (p.realizadoValor || 0)), 0);
+    const pipeAtualTXP = ativos
+      .filter((p) => p.potencialTipo === 'transferencia_xp')
+      .reduce((sum, p) => sum + Math.max(0, (p.potencial || 0) - (p.realizadoValor || 0)), 0);
+    // Realizado total (todos os prospects, não só ativos)
     const realizadoCL = prospects.filter((p) => p.realizadoTipo !== 'transferencia_xp').reduce((sum, p) => sum + (p.realizadoValor || 0), 0);
     const realizadoTXP = prospects.filter((p) => p.realizadoTipo === 'transferencia_xp').reduce((sum, p) => sum + (p.realizadoValor || 0), 0);
     return {
       total: prospects.length,
       ativos: ativos.length,
-      pipeCL,
-      pipeTXP,
-      pipeTotal: pipeCL + pipeTXP,
+      pipeAtualCL,
+      pipeAtualTXP,
+      pipeAtualTotal: pipeAtualCL + pipeAtualTXP,
       realizadoCL,
       realizadoTXP,
       realizadoTotal: realizadoCL + realizadoTXP,
@@ -350,17 +363,17 @@ export default function ProspectsPage() {
           <p className="text-sm text-gray-600">Ativos</p>
           <p className="text-2xl font-bold text-purple-600">{totais.ativos}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Pipe Total</p>
-          <p className="text-2xl font-bold text-blue-600">{formatCurrency(totais.pipeTotal)}</p>
+        <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
+          <p className="text-sm text-gray-600">Pipe Atual</p>
+          <p className="text-2xl font-bold text-blue-600">{formatCurrency(totais.pipeAtualTotal)}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <p className="text-sm text-gray-600">Pipe CL</p>
-          <p className="text-xl font-bold text-blue-500">{formatCurrency(totais.pipeCL)}</p>
+          <p className="text-xl font-bold text-blue-500">{formatCurrency(totais.pipeAtualCL)}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <p className="text-sm text-gray-600">Pipe TXP</p>
-          <p className="text-xl font-bold text-indigo-500">{formatCurrency(totais.pipeTXP)}</p>
+          <p className="text-xl font-bold text-indigo-500">{formatCurrency(totais.pipeAtualTXP)}</p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <p className="text-sm text-gray-600">Realizado CL</p>

@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import MainLayout from './components/layout/MainLayout';
+import { NotificationProvider } from './contexts/NotificationContext';
+import { ToolProvider } from './contexts/ToolContext';
+import { AppShell } from './components/layout/AppShell';
 
 // Pages
 import LoginPage from './pages/login/LoginPage';
@@ -8,33 +10,41 @@ import DashboardPage from './pages/dashboard/DashboardPage';
 import ClientesPage from './pages/clientes/ClientesPage';
 import ProspectsPage from './pages/prospects/ProspectsPage';
 import CrossPage from './pages/cross/CrossPage';
-import ReservasPage from './pages/reservas/ReservasPage';
 import OfertasPage from './pages/reservas/OfertasPage';
-import CustodiaReceitaPage from './pages/custodia-receita/CustodiaReceitaPage';
-import PlanoReceitasPage from './pages/plano-receitas/PlanoReceitasPage';
 import SalarioPage from './pages/salario/SalarioPage';
 import CaptacaoPage from './pages/captacao/CaptacaoPage';
+import MetasPage from './pages/metas/MetasPage';
+import AgendasPage from './pages/agendas/AgendasPage';
+import WealthPlaceholder from './pages/wealth/WealthPlaceholder';
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<MainLayout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="clientes" element={<ClientesPage />} />
-            <Route path="prospects" element={<ProspectsPage />} />
-            <Route path="captacao" element={<CaptacaoPage />} />
-            <Route path="cross" element={<CrossPage />} />
-            <Route path="reservas" element={<ReservasPage />} />
-            <Route path="ofertas" element={<OfertasPage />} />
-            <Route path="custodia-receita" element={<CustodiaReceitaPage />} />
-            <Route path="plano-receitas" element={<PlanoReceitasPage />} />
-            <Route path="salario" element={<SalarioPage />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <NotificationProvider>
+          <ToolProvider>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/" element={<AppShell />}>
+                <Route index element={<DashboardPage />} />
+                <Route path="clientes" element={<ClientesPage />} />
+                <Route path="prospects" element={<ProspectsPage />} />
+                <Route path="captacao" element={<CaptacaoPage />} />
+                <Route path="cross" element={<CrossPage />} />
+                <Route path="ofertas" element={<OfertasPage />} />
+                <Route path="agendas" element={<AgendasPage />} />
+                <Route path="metas" element={<MetasPage />} />
+                <Route path="salario" element={<SalarioPage />} />
+                <Route path="wealth" element={<WealthPlaceholder />} />
+                {/* Redirects para rotas antigas (removidas) */}
+                <Route path="reservas" element={<Navigate to="/" replace />} />
+                <Route path="custodia-receita" element={<Navigate to="/" replace />} />
+                <Route path="plano-receitas" element={<Navigate to="/" replace />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ToolProvider>
+        </NotificationProvider>
       </AuthProvider>
     </BrowserRouter>
   );

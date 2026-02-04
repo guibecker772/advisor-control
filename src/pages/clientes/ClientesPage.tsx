@@ -243,7 +243,7 @@ export default function ClientesPage() {
         ),
       },
     ],
-    []
+    [reunioesMap]
   );
 
   // Calcular totais

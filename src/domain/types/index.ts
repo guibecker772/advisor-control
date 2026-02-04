@@ -12,7 +12,9 @@ export const clienteSchema = z.object({
   status: z.enum(['ativo', 'inativo', 'prospecto']).optional().default('ativo'),
   assessor: z.string().optional(),
   custodiaInicial: z.number().min(0).optional().default(0),
-  custodiaAtual: z.number().min(0).optional().default(0),
+  custodiaAtual: z.number().optional().default(0),
+  custodiaOnShore: z.number().optional().default(0),
+  custodiaOffShore: z.number().optional().default(0),
   codigoConta: z.string().optional().default(''),
   perfilInvestidor: z.enum(['Regular', 'Qualificado', 'Profissional']).optional().default('Regular'),
   observacoes: z.string().optional(),
@@ -136,9 +138,24 @@ export const offerAllocationSchema = z.object({
 
 export type OfferAllocation = z.output<typeof offerAllocationSchema>;
 
+export const classeAtivoOptions = [
+  'Emissão Bancária',
+  'Crédito Privado',
+  'COE',
+  'Fundos Secundários',
+  'Fundos Oferta Pública',
+  'Oferta Pública RF',
+  'FIIs',
+  'Ações / RV',
+  'Previdência',
+  'Internacional',
+  'Outros',
+] as const;
+
 export const offerReservationSchema = z.object({
   id: z.string().optional(),
   nomeAtivo: z.string().min(1, 'Nome do ativo é obrigatório'),
+  classeAtivo: z.string().optional().default('Outros'),
   commissionMode: z.enum(['ROA_PERCENT', 'FIXED_REVENUE']).default('ROA_PERCENT'),
   roaPercent: z.number().min(0).max(1).optional().default(0.02),
   revenueFixed: z.number().min(0).optional().default(0),
@@ -157,6 +174,30 @@ export const offerReservationSchema = z.object({
 
 export type OfferReservation = z.output<typeof offerReservationSchema>;
 export type OfferReservationInput = z.input<typeof offerReservationSchema>;
+
+// Schema para FORMULÁRIO (aceita percentuais 0-100 na UI)
+// Usado pelo react-hook-form com zodResolver
+export const offerReservationFormSchema = z.object({
+  id: z.string().optional(),
+  nomeAtivo: z.string().min(1, 'Nome do ativo é obrigatório'),
+  classeAtivo: z.string().optional().default('Outros'),
+  commissionMode: z.enum(['ROA_PERCENT', 'FIXED_REVENUE']).default('ROA_PERCENT'),
+  roaPercent: z.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%').optional().default(2),
+  revenueFixed: z.number().min(0).optional().default(0),
+  repassePercent: z.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%').optional().default(25),
+  irPercent: z.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%').optional().default(19),
+  dataReserva: z.string().optional(),
+  dataLiquidacao: z.string().min(1, 'Data de liquidação é obrigatória'),
+  reservaEfetuada: z.boolean().default(false),
+  reservaLiquidada: z.boolean().default(false),
+  clientes: z.array(offerAllocationSchema).min(1, 'Adicione ao menos 1 cliente'),
+  observacoes: z.string().optional(),
+  ownerUid: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type OfferReservationFormInput = z.input<typeof offerReservationFormSchema>;
 
 // Funções de cálculo para ofertas
 export function calcOfferReservationTotals(reservation: OfferReservation) {
@@ -211,6 +252,7 @@ export const planoReceitasSchema = z.object({
   id: z.string().optional(),
   mes: z.number().min(1).max(12),
   ano: z.number().min(2020).max(2100),
+  // Metas (Planejado)
   metaCustodia: z.number().min(0).optional().default(0),
   metaCaptacao: z.number().optional().default(0),
   metaReceitaRV: z.number().min(0).optional().default(0),
@@ -221,6 +263,17 @@ export const planoReceitasSchema = z.object({
   metaReceitaOutros: z.number().min(0).optional().default(0),
   metaReceitaTotal: z.number().min(0).optional().default(0),
   metaCross: z.number().min(0).optional().default(0),
+  // Realizado (preenchido via Custódia x Receita e Captações)
+  realizadoCustodia: z.number().min(0).optional().default(0),
+  realizadoCaptacao: z.number().optional().default(0), // Pode ser negativo (saídas > entradas)
+  realizadoReceitaRV: z.number().min(0).optional().default(0),
+  realizadoReceitaRF: z.number().min(0).optional().default(0),
+  realizadoReceitaCOE: z.number().min(0).optional().default(0),
+  realizadoReceitaFundos: z.number().min(0).optional().default(0),
+  realizadoReceitaPrevidencia: z.number().min(0).optional().default(0),
+  realizadoReceitaOutros: z.number().min(0).optional().default(0),
+  realizadoReceitaTotal: z.number().min(0).optional().default(0),
+  realizadoCross: z.number().min(0).optional().default(0),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
   createdAt: z.string().optional(),
@@ -231,26 +284,47 @@ export type PlanoReceitas = z.output<typeof planoReceitasSchema>;
 export type PlanoReceitasInput = z.input<typeof planoReceitasSchema>;
 
 // ============== SALÁRIO ==============
+
+// Schema para linha de receita por classe
+export const salarioClasseSchema = z.object({
+  classe: z.string(),
+  receita: z.number().min(0).default(0),
+  repassePercent: z.number().min(0).max(1).default(0.25), // 0-1 (25% = 0.25)
+  majoracaoPercent: z.number().min(0).max(1).default(0), // 0-1
+});
+
+export type SalarioClasse = z.output<typeof salarioClasseSchema>;
+
 export const salarioSchema = z.object({
   id: z.string().optional(),
   mes: z.number().min(1).max(12),
   ano: z.number().min(2020).max(2100),
   
-  // Receitas base para cálculo
+  // Receitas detalhadas por classe (snapshot do mês)
+  classes: z.array(salarioClasseSchema).optional().default([]),
+  
+  // Receitas legado (mantido para compatibilidade)
   receitaTotal: z.number().min(0).optional().default(0),
   receitaCross: z.number().min(0).optional().default(0),
   
-  // Percentuais de comissão
+  // Percentuais de comissão (legado)
   percentualComissao: z.number().min(0).max(100).optional().default(30),
   percentualCross: z.number().min(0).max(100).optional().default(50),
   
-  // Bônus e deduções
+  // IR sobre bruto total (0-1, ex: 0.19 = 19%)
+  irPercent: z.number().min(0).max(1).optional().default(0),
+  
+  // Premiação/Campanha (manual, pode ser negativo para ajustes)
+  premiacao: z.number().optional().default(0),
+  ajuste: z.number().optional().default(0),
+  
+  // Bônus e deduções (legado)
   bonusFixo: z.number().optional().default(0),
   bonusMeta: z.number().optional().default(0),
   adiantamentos: z.number().optional().default(0),
   descontos: z.number().optional().default(0),
   
-  // IR retido na fonte (se aplicável)
+  // IR retido na fonte (legado - valor absoluto)
   irrf: z.number().min(0).optional().default(0),
   
   observacoes: z.string().optional(),
@@ -285,8 +359,10 @@ export const captacaoLancamentoSchema = z.object({
   direcao: z.enum(['entrada', 'saida']),
   tipo: z.enum(['captacao_liquida', 'transferencia_xp', 'troca_escritorio', 'resgate', 'outros']),
   origem: z.enum(['cliente', 'prospect', 'manual']),
+  bucket: z.enum(['onshore', 'offshore']).optional(),
   referenciaId: z.string().optional(),
   referenciaNome: z.string().optional(),
+  sourceRef: z.string().optional(), // Para dedupe: ex "prospect:abc123"
   valor: z.number().min(0, 'Valor deve ser positivo'),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
@@ -296,3 +372,23 @@ export const captacaoLancamentoSchema = z.object({
 
 export type CaptacaoLancamento = z.output<typeof captacaoLancamentoSchema>;
 export type CaptacaoLancamentoInput = z.input<typeof captacaoLancamentoSchema>;
+
+// ============== METAS MENSAIS ==============
+export const monthlyGoalsSchema = z.object({
+  id: z.string().optional(),
+  mes: z.number().min(1).max(12),
+  ano: z.number().min(2020).max(2100),
+  
+  // Metas (valores definidos pelo usuário)
+  metaReceita: z.number().min(0).optional().default(0),
+  metaCaptacaoLiquida: z.number().optional().default(0), // Pode ser negativa
+  metaTransferenciaXp: z.number().optional().default(0), // Pode ser negativa
+  
+  observacoes: z.string().optional(),
+  ownerUid: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+export type MonthlyGoals = z.output<typeof monthlyGoalsSchema>;
+export type MonthlyGoalsInput = z.input<typeof monthlyGoalsSchema>;

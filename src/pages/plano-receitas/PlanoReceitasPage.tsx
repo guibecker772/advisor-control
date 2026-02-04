@@ -2,12 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Plus } from 'lucide-react';
+import { Plus, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { planoReceitasRepository, custodiaReceitaRepository } from '../../services/repositories';
-import { planoReceitasSchema, type PlanoReceitas, type PlanoReceitasInput, type CustodiaReceita } from '../../domain/types';
+import { planoReceitasRepository, custodiaReceitaRepository, captacaoLancamentoRepository, crossRepository } from '../../services/repositories';
+import { planoReceitasSchema, type PlanoReceitas, type PlanoReceitasInput, type CustodiaReceita, type CaptacaoLancamento, type Cross } from '../../domain/types';
 import {
   formatCurrency,
   formatPercent,
@@ -15,6 +15,7 @@ import {
   calcularReceitaTotal,
   calcularAtingimento,
   getNomeMes,
+  gerarRealizadoMensal,
 } from '../../domain/calculations';
 import { DataTable, CurrencyCell, ActionButtons } from '../../components/shared/DataTable';
 import { Modal, ConfirmDelete } from '../../components/shared/Modal';
@@ -24,7 +25,10 @@ export default function PlanoReceitasPage() {
   const { user } = useAuth();
   const [planos, setPlanos] = useState<PlanoReceitas[]>([]);
   const [realizados, setRealizados] = useState<CustodiaReceita[]>([]);
+  const [captacoes, setCaptacoes] = useState<CaptacaoLancamento[]>([]);
+  const [crosses, setCrosses] = useState<Cross[]>([]);
   const [loading, setLoading] = useState(true);
+  const [autoFilling, setAutoFilling] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedPlano, setSelectedPlano] = useState<PlanoReceitas | null>(null);
@@ -74,12 +78,26 @@ export default function PlanoReceitasPage() {
     const loadData = async () => {
       try {
         setLoading(true);
-        const [planoData, realizadoData] = await Promise.all([
+        const [planoData, realizadoData, captacaoData, crossData] = await Promise.all([
           planoReceitasRepository.getByYear(user.uid, anoFiltro),
           custodiaReceitaRepository.getByYear(user.uid, anoFiltro),
+          captacaoLancamentoRepository.getByYear(user.uid, anoFiltro),
+          crossRepository.getAll(user.uid),
         ]);
         setPlanos(planoData);
         setRealizados(realizadoData);
+        setCaptacoes(captacaoData);
+        // Filtrar crosses do ano
+        setCrosses(crossData.filter(c => {
+          // Usar mes/ano se disponível
+          if (c.ano) {
+            return c.ano === anoFiltro;
+          }
+          // Fallback: usar dataVenda
+          if (!c.dataVenda) return false;
+          const year = new Date(c.dataVenda).getFullYear();
+          return year === anoFiltro;
+        }));
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
         toast.error('Erro ao carregar dados');
@@ -171,9 +189,79 @@ export default function PlanoReceitasPage() {
     }
   };
 
-  // Calcular realizado por mês
-  const getRealizadoMes = (mes: number): number => {
-    const registrosMes = realizados.filter((r) => r.mes === mes);
+  // Auto-preencher Realizado a partir de Custódia x Receita, Captações e Cross
+  const handleAutoPreencherRealizado = async () => {
+    if (!user) return;
+    if (planos.length === 0) {
+      toast.error('Nenhum plano cadastrado para auto-preencher');
+      return;
+    }
+
+    try {
+      setAutoFilling(true);
+      
+      // Verificar se há dados de Custódia x Receita
+      if (realizados.length === 0) {
+        toast('Nenhum registro de Custódia x Receita encontrado para o ano', { icon: '⚠️' });
+      }
+
+      let updated = 0;
+      const updatedPlanos: PlanoReceitas[] = [];
+
+      for (const plano of planos) {
+        if (!plano.id) continue;
+
+        // Gerar dados realizados para o mês
+        const realizadoData = gerarRealizadoMensal(
+          realizados,
+          captacoes,
+          crosses,
+          plano.mes,
+          plano.ano
+        );
+
+        // Atualizar apenas os campos realizados, mantendo metas (planejado) intactas
+        const planoAtualizado: PlanoReceitas = {
+          ...plano,
+          ...realizadoData,
+          realizadoReceitaTotal: realizadoData.realizadoReceitaRV +
+            realizadoData.realizadoReceitaRF +
+            realizadoData.realizadoReceitaCOE +
+            realizadoData.realizadoReceitaFundos +
+            realizadoData.realizadoReceitaPrevidencia +
+            realizadoData.realizadoReceitaOutros,
+        };
+
+        const result = await planoReceitasRepository.update(plano.id, planoAtualizado, user.uid);
+        if (result) {
+          updatedPlanos.push(result);
+          updated++;
+        }
+      }
+
+      // Atualizar estado local
+      setPlanos(prev => prev.map(p => {
+        const updatedPlano = updatedPlanos.find(up => up.id === p.id);
+        return updatedPlano || p;
+      }));
+
+      toast.success(`${updated} plano(s) atualizado(s) com valores realizados!`);
+    } catch (error) {
+      console.error('Erro ao auto-preencher:', error);
+      toast.error('Erro ao auto-preencher dados realizados');
+    } finally {
+      setAutoFilling(false);
+    }
+  };
+
+  // Calcular realizado por mês (agora usando dados persistidos ou calculando na hora)
+  const getRealizadoMes = (plano: PlanoReceitas): number => {
+    // Se já tem realizado persistido, usar
+    if (plano.realizadoReceitaTotal && plano.realizadoReceitaTotal > 0) {
+      return plano.realizadoReceitaTotal;
+    }
+    // Fallback: calcular na hora
+    const registrosMes = realizados.filter((r) => r.mes === plano.mes);
     return calcularReceitaTotal(registrosMes);
   };
 
@@ -190,9 +278,22 @@ export default function PlanoReceitasPage() {
         cell: (info) => <CurrencyCell value={info.getValue() as number} />,
       },
       {
+        id: 'realizadoCustodia',
+        header: 'Real. Custódia',
+        cell: (info) => <CurrencyCell value={info.row.original.realizadoCustodia || 0} />,
+      },
+      {
         accessorKey: 'metaCaptacao',
         header: 'Meta Captação',
         cell: (info) => <CurrencyCell value={info.getValue() as number} />,
+      },
+      {
+        id: 'realizadoCaptacao',
+        header: 'Real. Captação',
+        cell: (info) => {
+          const val = info.row.original.realizadoCaptacao || 0;
+          return <CurrencyCell value={val} />;
+        },
       },
       {
         id: 'metaReceita',
@@ -201,9 +302,9 @@ export default function PlanoReceitasPage() {
       },
       {
         id: 'realizado',
-        header: 'Realizado',
+        header: 'Real. Receita',
         cell: (info) => {
-          const realizado = getRealizadoMes(info.row.original.mes);
+          const realizado = getRealizadoMes(info.row.original);
           return <CurrencyCell value={realizado} />;
         },
       },
@@ -212,7 +313,7 @@ export default function PlanoReceitasPage() {
         header: 'Atingimento',
         cell: (info) => {
           const meta = calcularMetaReceitaTotal(info.row.original);
-          const realizado = getRealizadoMes(info.row.original.mes);
+          const realizado = getRealizadoMes(info.row.original);
           const atingimento = calcularAtingimento(meta, realizado);
           return (
             <span className={`font-medium ${atingimento >= 100 ? 'text-green-600' : 'text-red-600'}`}>
@@ -226,7 +327,7 @@ export default function PlanoReceitasPage() {
         header: 'GAP',
         cell: (info) => {
           const meta = calcularMetaReceitaTotal(info.row.original);
-          const realizado = getRealizadoMes(info.row.original.mes);
+          const realizado = getRealizadoMes(info.row.original);
           const gap = realizado - meta;
           return <CurrencyCell value={gap} />;
         },
@@ -245,12 +346,13 @@ export default function PlanoReceitasPage() {
         ),
       },
     ],
-    [realizados]
+    [realizados, captacoes, crosses]
   );
 
   const totais = useMemo(() => {
     const metaTotal = planos.reduce((sum, p) => sum + calcularMetaReceitaTotal(p), 0);
-    const realizadoTotal = calcularReceitaTotal(realizados);
+    // Usar realizadoReceitaTotal persistido ou calcular na hora
+    const realizadoTotal = planos.reduce((sum, p) => sum + getRealizadoMes(p), 0);
     const atingimento = calcularAtingimento(metaTotal, realizadoTotal);
     const gap = realizadoTotal - metaTotal;
 
@@ -290,6 +392,15 @@ export default function PlanoReceitasPage() {
               </option>
             ))}
           </select>
+          <button
+            onClick={handleAutoPreencherRealizado}
+            disabled={autoFilling || planos.length === 0}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Preenche automaticamente os valores realizados a partir de Custódia x Receita, Captações e Cross"
+          >
+            <Zap className="w-5 h-5 mr-2" />
+            {autoFilling ? 'Preenchendo...' : 'Auto-preencher Realizado'}
+          </button>
           <button
             onClick={() => openModal()}
             className="flex items-center px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"

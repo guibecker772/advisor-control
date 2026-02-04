@@ -8,19 +8,27 @@ import {
   Target,
   ArrowUpRight,
   ArrowDownRight,
+  Repeat,
 } from 'lucide-react';
-import { clienteRepository, prospectRepository, custodiaReceitaRepository, planoReceitasRepository } from '../../services/repositories';
+import { 
+  clienteRepository, 
+  prospectRepository, 
+  custodiaReceitaRepository, 
+  monthlyGoalsRepository,
+  captacaoLancamentoRepository,
+  offerReservationRepository,
+  crossRepository,
+} from '../../services/repositories';
 import {
   calcularCustodiaTotal,
-  calcularReceitaTotal,
-  calcularCaptacaoTotal,
   calcularROA,
   formatCurrency,
   formatPercent,
-  compararPlanoRealizado,
   getNomeMes,
+  calcularRealizadosMensal,
+  calcularPercentAtingido,
 } from '../../domain/calculations';
-import type { Cliente, Prospect, CustodiaReceita, PlanoReceitas } from '../../domain/types';
+import type { Cliente, Prospect, CustodiaReceita, MonthlyGoals, CaptacaoLancamento, OfferReservation, Cross } from '../../domain/types';
 
 interface KPI {
   title: string;
@@ -34,7 +42,11 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState<KPI[]>([]);
-  const [comparativo, setComparativo] = useState<ReturnType<typeof compararPlanoRealizado> | null>(null);
+  const [comparativo, setComparativo] = useState<{
+    receita: { meta: number; realizado: number; atingimento: number | null };
+    captacaoLiquida: { meta: number; realizado: number; atingimento: number | null };
+    transferenciaXp: { meta: number; realizado: number; atingimento: number | null };
+  } | null>(null);
 
   const mesAtual = new Date().getMonth() + 1;
   const anoAtual = new Date().getFullYear();
@@ -47,19 +59,53 @@ export default function DashboardPage() {
         setLoading(true);
 
         // Carregar dados
-        const [clientes, prospects, custodiaReceita, planos] = await Promise.all([
+        // Cross usa getAll pois o filtro por mês/ano é feito em calcularCrossRealizadoMensal usando dataVenda
+        const [clientes, prospects, custodiaReceita, metas, captacoes, ofertas, crosses] = await Promise.all([
           clienteRepository.getAll(user.uid),
           prospectRepository.getAll(user.uid),
           custodiaReceitaRepository.getByMonth(user.uid, mesAtual, anoAtual),
-          planoReceitasRepository.getByMonth(user.uid, mesAtual, anoAtual),
-        ]) as [Cliente[], Prospect[], CustodiaReceita[], PlanoReceitas[]];
+          monthlyGoalsRepository.getByMonth(user.uid, mesAtual, anoAtual),
+          captacaoLancamentoRepository.getByMonth(user.uid, mesAtual, anoAtual),
+          offerReservationRepository.getAll(user.uid),
+          crossRepository.getAll(user.uid),
+        ]) as [Cliente[], Prospect[], CustodiaReceita[], MonthlyGoals[], CaptacaoLancamento[], OfferReservation[], Cross[]];
 
-        // Cálculos
+        // Cálculos de custódia
         const custodiaTotal = calcularCustodiaTotal(clientes);
-        const receitaTotal = calcularReceitaTotal(custodiaReceita);
-        const captacaoTotal = calcularCaptacaoTotal(custodiaReceita);
+        
+        // Derivar lançamentos de prospects realizados no mês (mesma lógica do CaptacaoPage/MetasPage)
+        const sourceRefsExistentes = new Set(captacoes.filter(l => l.sourceRef).map(l => l.sourceRef));
+        const derivadosProspects: CaptacaoLancamento[] = prospects
+          .filter((p) => {
+            if (!p.realizadoData || !p.realizadoValor) return false;
+            const d = new Date(p.realizadoData + 'T00:00:00');
+            return d.getMonth() + 1 === mesAtual && d.getFullYear() === anoAtual;
+          })
+          .filter((p) => !sourceRefsExistentes.has(`prospect:${p.id}`))
+          .map((p): CaptacaoLancamento => ({
+            id: `derived-${p.id}`,
+            data: p.realizadoData!,
+            mes: mesAtual,
+            ano: anoAtual,
+            direcao: 'entrada',
+            tipo: p.realizadoTipo || 'captacao_liquida',
+            origem: 'prospect',
+            referenciaId: p.id,
+            referenciaNome: p.nome,
+            sourceRef: `prospect:${p.id}`,
+            valor: p.realizadoValor!,
+            observacoes: 'Derivado de Prospect',
+          }));
+        
+        // Combinar captações persistidas + derivadas de prospects
+        const captacoesConsolidadas = [...captacoes, ...derivadosProspects];
+        
+        // Realizados automáticos (puxada centralizada incluindo Prospect Auto)
+        const realizados = calcularRealizadosMensal(custodiaReceita, captacoesConsolidadas, mesAtual, anoAtual, ofertas, crosses);
+        
+        // ROA
         const custodiaMedia = custodiaTotal > 0 ? custodiaTotal : 1;
-        const roa = calcularROA(receitaTotal, custodiaMedia);
+        const roa = calcularROA(realizados.receita, custodiaMedia);
 
         // KPIs
         setKpis([
@@ -83,16 +129,23 @@ export default function DashboardPage() {
           },
           {
             title: 'Receita do Mês',
-            value: formatCurrency(receitaTotal),
+            value: formatCurrency(realizados.receita),
             icon: DollarSign,
             color: 'bg-yellow-500',
           },
           {
             title: 'Captação Líquida',
-            value: formatCurrency(captacaoTotal),
-            change: captacaoTotal,
+            value: formatCurrency(realizados.captacaoLiquida),
+            change: realizados.captacaoLiquida,
             icon: Target,
             color: 'bg-indigo-500',
+          },
+          {
+            title: 'Transferência XP',
+            value: formatCurrency(realizados.transferenciaXp),
+            change: realizados.transferenciaXp,
+            icon: Repeat,
+            color: 'bg-cyan-500',
           },
           {
             title: 'ROA Mensal',
@@ -102,10 +155,28 @@ export default function DashboardPage() {
           },
         ]);
 
-        // Comparativo com plano
-        if (planos.length > 0) {
-          const plano = planos[0];
-          setComparativo(compararPlanoRealizado(plano, custodiaTotal, captacaoTotal, receitaTotal, 0));
+        // Comparativo com metas (apenas Receita, Captação Líquida, Transferência XP)
+        const meta = metas.length > 0 ? metas[0] : null;
+        if (meta) {
+          setComparativo({
+            receita: {
+              meta: meta.metaReceita || 0,
+              realizado: realizados.receita,
+              atingimento: calcularPercentAtingido(meta.metaReceita || 0, realizados.receita),
+            },
+            captacaoLiquida: {
+              meta: meta.metaCaptacaoLiquida || 0,
+              realizado: realizados.captacaoLiquida,
+              atingimento: calcularPercentAtingido(meta.metaCaptacaoLiquida || 0, realizados.captacaoLiquida),
+            },
+            transferenciaXp: {
+              meta: meta.metaTransferenciaXp || 0,
+              realizado: realizados.transferenciaXp,
+              atingimento: calcularPercentAtingido(meta.metaTransferenciaXp || 0, realizados.transferenciaXp),
+            },
+          });
+        } else {
+          setComparativo(null);
         }
       } catch (error) {
         console.error('Erro ao carregar dashboard:', error);
@@ -173,57 +244,7 @@ export default function DashboardPage() {
             </h2>
           </div>
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Custódia */}
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Custódia</h3>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Meta:</span>
-                  <span className="font-medium">{formatCurrency(comparativo.custodia.meta)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Realizado:</span>
-                  <span className="font-medium">{formatCurrency(comparativo.custodia.realizado)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Atingimento:</span>
-                  <span className={`font-medium ${comparativo.custodia.atingimento >= 100 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(comparativo.custodia.atingimento)}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full ${comparativo.custodia.atingimento >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                    style={{ width: `${Math.min(comparativo.custodia.atingimento, 100)}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Captação */}
-              <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Captação</h3>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Meta:</span>
-                  <span className="font-medium">{formatCurrency(comparativo.captacao.meta)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Realizado:</span>
-                  <span className="font-medium">{formatCurrency(comparativo.captacao.realizado)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-500">Atingimento:</span>
-                  <span className={`font-medium ${comparativo.captacao.atingimento >= 100 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(comparativo.captacao.atingimento)}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full ${comparativo.captacao.atingimento >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                    style={{ width: `${Math.min(Math.abs(comparativo.captacao.atingimento), 100)}%` }}
-                  />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Receita */}
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-gray-600">Receita</h3>
@@ -237,39 +258,86 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Atingimento:</span>
-                  <span className={`font-medium ${comparativo.receita.atingimento >= 100 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(comparativo.receita.atingimento)}
+                  <span className={`font-medium ${
+                    comparativo.receita.atingimento === null ? 'text-gray-500' :
+                    comparativo.receita.atingimento >= 100 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {comparativo.receita.atingimento === null ? '—' : formatPercent(comparativo.receita.atingimento)}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
-                    className={`h-2 rounded-full ${comparativo.receita.atingimento >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                    style={{ width: `${Math.min(comparativo.receita.atingimento, 100)}%` }}
+                    className={`h-2 rounded-full ${
+                      comparativo.receita.atingimento === null ? 'bg-gray-300' :
+                      comparativo.receita.atingimento >= 100 ? 'bg-green-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${Math.min(Math.max(comparativo.receita.atingimento || 0, 0), 100)}%` }}
                   />
                 </div>
               </div>
 
-              {/* Cross */}
+              {/* Captação Líquida */}
               <div className="space-y-2">
-                <h3 className="text-sm font-medium text-gray-600">Cross Selling</h3>
+                <h3 className="text-sm font-medium text-gray-600">Captação Líquida</h3>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Meta:</span>
-                  <span className="font-medium">{formatCurrency(comparativo.cross.meta)}</span>
+                  <span className="font-medium">{formatCurrency(comparativo.captacaoLiquida.meta)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Realizado:</span>
-                  <span className="font-medium">{formatCurrency(comparativo.cross.realizado)}</span>
+                  <span className={`font-medium ${comparativo.captacaoLiquida.realizado >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(comparativo.captacaoLiquida.realizado)}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-gray-500">Atingimento:</span>
-                  <span className={`font-medium ${comparativo.cross.atingimento >= 100 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatPercent(comparativo.cross.atingimento)}
+                  <span className={`font-medium ${
+                    comparativo.captacaoLiquida.atingimento === null ? 'text-gray-500' :
+                    comparativo.captacaoLiquida.atingimento >= 100 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {comparativo.captacaoLiquida.atingimento === null ? '—' : formatPercent(comparativo.captacaoLiquida.atingimento)}
                   </span>
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
-                    className={`h-2 rounded-full ${comparativo.cross.atingimento >= 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                    style={{ width: `${Math.min(comparativo.cross.atingimento, 100)}%` }}
+                    className={`h-2 rounded-full ${
+                      comparativo.captacaoLiquida.atingimento === null ? 'bg-gray-300' :
+                      comparativo.captacaoLiquida.atingimento >= 100 ? 'bg-green-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${Math.min(Math.max(comparativo.captacaoLiquida.atingimento || 0, 0), 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Transferência XP */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-gray-600">Transferência XP</h3>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Meta:</span>
+                  <span className="font-medium">{formatCurrency(comparativo.transferenciaXp.meta)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Realizado:</span>
+                  <span className={`font-medium ${comparativo.transferenciaXp.realizado >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(comparativo.transferenciaXp.realizado)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-500">Atingimento:</span>
+                  <span className={`font-medium ${
+                    comparativo.transferenciaXp.atingimento === null ? 'text-gray-500' :
+                    comparativo.transferenciaXp.atingimento >= 100 ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {comparativo.transferenciaXp.atingimento === null ? '—' : formatPercent(comparativo.transferenciaXp.atingimento)}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full ${
+                      comparativo.transferenciaXp.atingimento === null ? 'bg-gray-300' :
+                      comparativo.transferenciaXp.atingimento >= 100 ? 'bg-green-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${Math.min(Math.max(comparativo.transferenciaXp.atingimento || 0, 0), 100)}%` }}
                   />
                 </div>
               </div>
@@ -297,11 +365,11 @@ export default function DashboardPage() {
             <span className="text-sm font-medium text-gray-700">Novo Prospect</span>
           </a>
           <a
-            href="/custodia-receita"
+            href="/metas"
             className="flex flex-col items-center p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
           >
-            <TrendingUp className="w-8 h-8 text-green-600 mb-2" />
-            <span className="text-sm font-medium text-gray-700">Lançar Receita</span>
+            <Target className="w-8 h-8 text-green-600 mb-2" />
+            <span className="text-sm font-medium text-gray-700">Ver Metas</span>
           </a>
           <a
             href="/salario"
