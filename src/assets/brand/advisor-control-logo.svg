@@ -1,0 +1,47 @@
+<svg width="320" height="64" viewBox="0 0 320 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ac_bg2" x1="10" y1="6" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2F6BFF" />
+      <stop offset="1" stop-color="#16C2FF" />
+    </linearGradient>
+    <linearGradient id="ac_ring2" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.65" />
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.18" />
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(0,0)">
+    <circle cx="32" cy="32" r="26" fill="url(#ac_bg2)" />
+    <circle cx="32" cy="32" r="26" stroke="url(#ac_ring2)" stroke-width="2" />
+    <path
+      d="M22.2 41.5L29.6 22.8C30.2 21.4 31.4 20.6 33 20.6C34.6 20.6 35.8 21.4 36.4 22.8L43.8 41.5C44.3 42.8 43.7 44.2 42.4 44.7C41.1 45.2 39.7 44.6 39.2 43.3L37.6 39.1H28.4L26.8 43.3C26.3 44.6 24.9 45.2 23.6 44.7C22.3 44.2 21.7 42.8 22.2 41.5ZM30 34.6H36L33 26.8L30 34.6Z"
+      fill="rgba(11,18,32,0.92)"
+    />
+    <path
+      d="M47.2 24.4C47.2 23.1 48.3 22 49.6 22C50.9 22 52 23.1 52 24.4V39.6C52 42.9 49.3 45.6 46 45.6H45.2C41.9 45.6 39.2 42.9 39.2 39.6V39.2C39.2 37.9 40.3 36.8 41.6 36.8C42.9 36.8 44 37.9 44 39.2V39.6C44 40.2 44.6 40.8 45.2 40.8H46C46.6 40.8 47.2 40.2 47.2 39.6V24.4Z"
+      fill="rgba(255,255,255,0.92)"
+    />
+  </g>
+
+  <text
+    x="78"
+    y="39"
+    fill="rgba(255,255,255,0.92)"
+    font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial"
+    font-size="22"
+    font-weight="700"
+    letter-spacing="0.2"
+  >
+    Advisor Control
+  </text>
+  <text
+    x="78"
+    y="55"
+    fill="rgba(255,255,255,0.62)"
+    font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial"
+    font-size="12"
+    font-weight="500"
+  >
+    Metas Pro
+  </text>
+</svg>

@@ -21,6 +21,7 @@ import {
 import { useTool } from '../../../contexts/ToolContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useTheme, type ThemePref } from '../../../contexts/ThemeContext';
+import advisorControlMark from '../../../assets/brand/advisor-control-mark.svg';
 
 // Sidebar navigation — agrupada por tópicos
 const navigationGroups = [
@@ -125,15 +126,11 @@ export default function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
         className="flex items-center gap-3 px-4 h-16 border-b"
         style={{ borderColor: 'var(--sidebar-border)' }}
       >
-        <div 
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-lg font-bold flex-shrink-0"
-          style={{ 
-            backgroundColor: 'var(--color-gold-bg)',
-            color: 'var(--color-gold)',
-          }}
-        >
-          {collapsed ? 'A' : 'AC'}
-        </div>
+        <img
+          src={advisorControlMark}
+          alt="Advisor Control"
+          className="w-9 h-9 rounded-lg flex-shrink-0"
+        />
         {!collapsed && (
           <div className="flex flex-col overflow-hidden">
             <span 

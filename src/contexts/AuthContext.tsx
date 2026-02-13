@@ -83,7 +83,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!auth || !googleProvider) {
       throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
     }
-    await signInWithPopup(auth, googleProvider);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      const authError = error as { code?: string };
+      if (authError.code === 'auth/popup-closed-by-user') {
+        const popupError = new Error('Login cancelado.');
+        (popupError as { code?: string }).code = 'auth/popup-closed-by-user';
+        throw popupError;
+      }
+      throw error;
+    }
   };
 
   return (
