@@ -61,6 +61,24 @@ interface KpiCardProps {
   className?: string;
 }
 
+function parseCurrencyValue(value: string | number): { prefix: string; amount: string } | null {
+  if (typeof value !== 'string') return null;
+
+  const normalized = value.replace(/\u00A0/g, ' ').trim();
+  const currencyIndex = normalized.indexOf('R$');
+  if (currencyIndex === -1) return null;
+
+  const before = normalized.slice(0, currencyIndex).trim();
+  const after = normalized.slice(currencyIndex + 2).trim();
+  if (!after) return null;
+
+  const signal = before === '-' ? '-' : '';
+  return {
+    prefix: `${signal}R$`,
+    amount: after,
+  };
+}
+
 export function KpiCard({
   title,
   value,
@@ -89,6 +107,10 @@ export function KpiCard({
   const trendSymbol = trend === 'up' ? '\u2191' : trend === 'down' ? '\u2193' : '\u2192';
   const isWideLayout = layout === 'wide';
   const hasIcon = Boolean(icon);
+  const parsedCurrencyValue = parseCurrencyValue(value);
+  const valueClassName = isWideLayout
+    ? 'mt-1 text-[1.75rem] sm:text-[1.95rem] font-bold leading-tight tracking-tight'
+    : 'text-[1.75rem] font-bold leading-tight tracking-tight';
 
   return (
     <BaseCard className={className} padding="lg">
@@ -100,12 +122,29 @@ export function KpiCard({
           >
             {title}
           </p>
-          <p 
-            className={`text-2xl font-bold leading-tight ${isWideLayout ? 'mt-2 break-words' : ''}`}
-            style={{ color: 'var(--color-text)' }}
-          >
-            {value}
-          </p>
+          {parsedCurrencyValue ? (
+            <div className={isWideLayout ? 'mt-1' : ''}>
+              <p
+                className="text-xs font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                {parsedCurrencyValue.prefix}
+              </p>
+              <p
+                className={`${valueClassName} whitespace-nowrap`}
+                style={{ color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}
+              >
+                {parsedCurrencyValue.amount}
+              </p>
+            </div>
+          ) : (
+            <p
+              className={`${valueClassName} whitespace-nowrap`}
+              style={{ color: 'var(--color-text)', fontVariantNumeric: 'tabular-nums' }}
+            >
+              {value}
+            </p>
+          )}
           {subtitle && (
             <p 
               className="text-sm mt-1"
