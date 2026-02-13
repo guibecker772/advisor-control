@@ -1,6 +1,30 @@
 @import "tailwindcss";
 @import "./theme/tokens.css";
 
+/* ── Tailwind v4 theme mapping (PW-compatible semantic aliases) ── */
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-text);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-text);
+  --color-muted: var(--color-surface-2);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-primary: var(--color-gold);
+  --color-primary-foreground: var(--color-text-inverse);
+  --color-secondary: var(--color-surface-2);
+  --color-secondary-foreground: var(--color-text);
+  --color-accent: var(--color-gold-bg);
+  --color-accent-foreground: var(--color-gold);
+  --color-destructive: var(--color-danger);
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-foreground: var(--color-text);
+  --color-sidebar-border-clr: var(--sidebar-border);
+  --color-divider: var(--color-border-subtle);
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
 /* ===========================================
    TEMA ESCURO GLOBAL - ADVISOR CONTROL
    Overrides para bg-white e cores claras
@@ -10,6 +34,10 @@
 html, body {
   background-color: var(--color-bg);
   color: var(--color-text);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ===== OVERRIDE GLOBAL: bg-white → tema escuro ===== */
@@ -387,7 +415,66 @@ table tbody tr:hover,
 }
 
 .fc-custom .fc-event {
-  @apply rounded-md px-2 py-1 text-xs font-medium border-0 cursor-pointer;
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text);
+  box-shadow: none;
+  @apply rounded-lg text-xs font-medium cursor-pointer;
+}
+
+.fc-custom .fc-event .fc-event-main {
+  padding: 0;
+}
+
+.fc-custom .ac-event-pill {
+  @apply px-1.5 py-1 flex flex-col gap-1;
+}
+
+.fc-custom .ac-event-main {
+  @apply flex items-center gap-1 min-w-0;
+}
+
+.fc-custom .ac-event-time {
+  color: var(--color-text-muted);
+  @apply text-[11px] font-medium shrink-0;
+}
+
+.fc-custom .ac-event-title {
+  color: var(--color-text);
+  @apply text-[11px] font-semibold truncate;
+}
+
+.fc-custom .ac-event-chip-row {
+  @apply flex items-center gap-1 min-w-0;
+}
+
+.fc-custom .ac-event-chip {
+  @apply px-1.5 py-0.5 rounded-full text-[10px] font-medium truncate;
+}
+
+.fc-custom .ac-event-chip--neutral {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-secondary);
+}
+
+.fc-custom .ac-event-chip--success {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.fc-custom .ac-event-chip--warning {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.fc-custom .ac-event-chip--danger {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.fc-custom .ac-event-chip--info {
+  background-color: var(--color-info-bg);
+  color: var(--color-info);
 }
 
 .fc-custom .fc-event:hover {
@@ -404,8 +491,16 @@ table tbody tr:hover,
 }
 
 .fc-custom .fc-daygrid-more-link {
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}
+
+.fc-custom .fc-daygrid-more-link:hover {
+  background-color: var(--color-gold-bg);
   color: var(--color-gold);
-  @apply text-xs font-medium hover:underline;
+  text-decoration: none;
 }
 
 .fc-custom .fc-highlight {

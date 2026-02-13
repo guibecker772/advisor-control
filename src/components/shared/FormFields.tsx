@@ -1,34 +1,87 @@
-import { type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes, forwardRef } from 'react';
+import {
+  type InputHTMLAttributes,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+  forwardRef,
+} from 'react';
 
+/* ---- shared inline style helpers ---- */
+const labelStyle: React.CSSProperties = {
+  color: 'var(--color-text-secondary)',
+};
+
+const baseInputStyle: React.CSSProperties = {
+  backgroundColor: 'var(--color-surface-2)',
+  border: '1px solid var(--color-border)',
+  color: 'var(--color-text)',
+};
+
+const errorInputStyle: React.CSSProperties = {
+  ...baseInputStyle,
+  borderColor: 'var(--color-danger)',
+};
+
+const errorTextStyle: React.CSSProperties = {
+  color: 'var(--color-danger)',
+};
+
+function applyFocus(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) {
+  e.currentTarget.style.boxShadow = '0 0 0 2px var(--color-gold)';
+  e.currentTarget.style.borderColor = 'var(--color-gold)';
+}
+
+function removeFocus(
+  e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  hasError?: boolean,
+) {
+  e.currentTarget.style.boxShadow = 'none';
+  e.currentTarget.style.borderColor = hasError
+    ? 'var(--color-danger)'
+    : 'var(--color-border)';
+}
+
+/* ---- Input ---- */
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, className = '', ...props }, ref) => {
+  ({ label, error, className = '', onFocus, onBlur, ...props }, ref) => {
     return (
       <div className="space-y-1">
         {label && (
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium" style={labelStyle}>
             {label}
           </label>
         )}
         <input
           ref={ref}
-          className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
-            error ? 'border-red-300' : 'border-gray-300'
-          } ${className}`}
+          className={`block w-full px-3 py-2 rounded-md shadow-sm focus:outline-none sm:text-sm ${className}`}
+          style={error ? errorInputStyle : baseInputStyle}
+          onFocus={(e) => {
+            applyFocus(e);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            removeFocus(e, !!error);
+            onBlur?.(e);
+          }}
           {...props}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="text-sm" style={errorTextStyle}>
+            {error}
+          </p>
+        )}
       </div>
     );
-  }
+  },
 );
 
 Input.displayName = 'Input';
 
+/* ---- Select ---- */
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
@@ -36,19 +89,26 @@ interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, options, className = '', ...props }, ref) => {
+  ({ label, error, options, className = '', onFocus, onBlur, ...props }, ref) => {
     return (
       <div className="space-y-1">
         {label && (
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium" style={labelStyle}>
             {label}
           </label>
         )}
         <select
           ref={ref}
-          className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
-            error ? 'border-red-300' : 'border-gray-300'
-          } ${className}`}
+          className={`block w-full px-3 py-2 rounded-md shadow-sm focus:outline-none sm:text-sm ${className}`}
+          style={error ? errorInputStyle : baseInputStyle}
+          onFocus={(e) => {
+            applyFocus(e);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            removeFocus(e, !!error);
+            onBlur?.(e);
+          }}
           {...props}
         >
           <option value="">Selecione...</option>
@@ -58,44 +118,61 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </option>
           ))}
         </select>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="text-sm" style={errorTextStyle}>
+            {error}
+          </p>
+        )}
       </div>
     );
-  }
+  },
 );
 
 Select.displayName = 'Select';
 
+/* ---- TextArea ---- */
 interface TextAreaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label?: string;
   error?: string;
 }
 
 export const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
-  ({ label, error, className = '', ...props }, ref) => {
+  ({ label, error, className = '', onFocus, onBlur, ...props }, ref) => {
     return (
       <div className="space-y-1">
         {label && (
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium" style={labelStyle}>
             {label}
           </label>
         )}
         <textarea
           ref={ref}
           rows={3}
-          className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
-            error ? 'border-red-300' : 'border-gray-300'
-          } ${className}`}
+          className={`block w-full px-3 py-2 rounded-md shadow-sm focus:outline-none sm:text-sm ${className}`}
+          style={error ? errorInputStyle : baseInputStyle}
+          onFocus={(e) => {
+            applyFocus(e);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            removeFocus(e, !!error);
+            onBlur?.(e);
+          }}
           {...props}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="text-sm" style={errorTextStyle}>
+            {error}
+          </p>
+        )}
       </div>
     );
-  }
+  },
 );
 
 TextArea.displayName = 'TextArea';
 
+/* ---- CurrencyInput ---- */
 interface CurrencyInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
   label?: string;
   error?: string;
@@ -104,7 +181,7 @@ interface CurrencyInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>,
 }
 
 export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
-  ({ label, error, value, onChange, className = '', ...props }, ref) => {
+  ({ label, error, value, onChange, className = '', onFocus, onBlur, ...props }, ref) => {
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const rawValue = e.target.value.replace(/\D/g, '');
       const numericValue = parseInt(rawValue, 10) / 100 || 0;
@@ -119,7 +196,7 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
     return (
       <div className="space-y-1">
         {label && (
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-sm font-medium" style={labelStyle}>
             {label}
           </label>
         )}
@@ -128,20 +205,31 @@ export const CurrencyInput = forwardRef<HTMLInputElement, CurrencyInputProps>(
           type="text"
           value={formattedValue}
           onChange={handleChange}
-          className={`block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${
-            error ? 'border-red-300' : 'border-gray-300'
-          } ${className}`}
+          className={`block w-full px-3 py-2 rounded-md shadow-sm focus:outline-none sm:text-sm ${className}`}
+          style={error ? errorInputStyle : baseInputStyle}
+          onFocus={(e) => {
+            applyFocus(e);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            removeFocus(e, !!error);
+            onBlur?.(e);
+          }}
           {...props}
         />
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <p className="text-sm" style={errorTextStyle}>
+            {error}
+          </p>
+        )}
       </div>
     );
-  }
+  },
 );
 
 CurrencyInput.displayName = 'CurrencyInput';
 
-// Componente de filtro de período (mês/ano)
+/* ---- PeriodFilter ---- */
 interface PeriodFilterProps {
   mes: number;
   ano: number;
@@ -171,12 +259,21 @@ export function PeriodFilter({ mes, ano, onMesChange, onAnoChange }: PeriodFilte
     label: String(currentYear - 2 + i),
   }));
 
+  const selectStyle: React.CSSProperties = {
+    backgroundColor: 'var(--color-surface-2)',
+    border: '1px solid var(--color-border)',
+    color: 'var(--color-text)',
+  };
+
   return (
     <div className="flex items-center space-x-4">
       <select
         value={mes}
         onChange={(e) => onMesChange(Number(e.target.value))}
-        className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+        className="px-3 py-2 rounded-md shadow-sm focus:outline-none sm:text-sm"
+        style={selectStyle}
+        onFocus={(e) => applyFocus(e)}
+        onBlur={(e) => removeFocus(e)}
       >
         {meses.map((m) => (
           <option key={m.value} value={m.value}>
@@ -187,7 +284,10 @@ export function PeriodFilter({ mes, ano, onMesChange, onAnoChange }: PeriodFilte
       <select
         value={ano}
         onChange={(e) => onAnoChange(Number(e.target.value))}
-        className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+        className="px-3 py-2 rounded-md shadow-sm focus:outline-none sm:text-sm"
+        style={selectStyle}
+        onFocus={(e) => applyFocus(e)}
+        onBlur={(e) => removeFocus(e)}
       >
         {anos.map((a) => (
           <option key={a.value} value={a.value}>

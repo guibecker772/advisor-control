@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+﻿import { useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -27,6 +27,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const { login, register: registerUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const returnTo = (() => {
+    const value = searchParams.get('returnTo');
+    if (!value || !value.startsWith('/')) return '/';
+    return value;
+  })();
 
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -50,12 +57,13 @@ export default function LoginPage() {
       setLoading(true);
       await login(data.email, data.password);
       toast.success('Login realizado com sucesso!');
-      navigate('/');
-    } catch (error: any) {
+      navigate(returnTo);
+    } catch (error: unknown) {
       console.error('Erro no login:', error);
-      const message = error.code === 'auth/invalid-credential'
+      const authError = error as { code?: string };
+      const message = authError.code === 'auth/invalid-credential'
         ? 'Email ou senha incorretos'
-        : error.code === 'auth/user-not-found'
+        : authError.code === 'auth/user-not-found'
         ? 'Usuário não encontrado'
         : 'Erro ao fazer login';
       toast.error(message);
@@ -69,12 +77,13 @@ export default function LoginPage() {
       setLoading(true);
       await registerUser(data.email, data.password);
       toast.success('Conta criada com sucesso!');
-      navigate('/');
-    } catch (error: any) {
+      navigate(returnTo);
+    } catch (error: unknown) {
       console.error('Erro no cadastro:', error);
-      const message = error.code === 'auth/email-already-in-use'
+      const authError = error as { code?: string };
+      const message = authError.code === 'auth/email-already-in-use'
         ? 'Este email já está em uso'
-        : error.code === 'auth/weak-password'
+        : authError.code === 'auth/weak-password'
         ? 'Senha muito fraca'
         : 'Erro ao criar conta';
       toast.error(message);
@@ -123,7 +132,7 @@ export default function LoginPage() {
                 type="password"
                 {...loginForm.register('password')}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                placeholder="••••••••"
+                placeholder="********"
               />
               {loginForm.formState.errors.password && (
                 <p className="mt-1 text-sm text-red-600">
@@ -167,7 +176,7 @@ export default function LoginPage() {
                 type="password"
                 {...registerForm.register('password')}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                placeholder="••••••••"
+                placeholder="********"
               />
               {registerForm.formState.errors.password && (
                 <p className="mt-1 text-sm text-red-600">
@@ -184,7 +193,7 @@ export default function LoginPage() {
                 type="password"
                 {...registerForm.register('confirmPassword')}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                placeholder="••••••••"
+                placeholder="********"
               />
               {registerForm.formState.errors.confirmPassword && (
                 <p className="mt-1 text-sm text-red-600">
@@ -218,3 +227,4 @@ export default function LoginPage() {
     </div>
   );
 }
+

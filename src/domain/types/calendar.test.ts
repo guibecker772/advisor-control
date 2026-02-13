@@ -74,10 +74,17 @@ describe('detectMeetingType', () => {
     });
   });
 
+  describe('Acompanhamento', () => {
+    it('deve detectar reuniões de acompanhamento', () => {
+      expect(detectMeetingType('Reunião de acompanhamento')).toBe('acompanhamento');
+      expect(detectMeetingType('Call follow-up cliente')).toBe('acompanhamento');
+      expect(detectMeetingType('Revisão de carteira')).toBe('acompanhamento');
+    });
+  });
+
   describe('Outro', () => {
     it('deve retornar "outro" para títulos genéricos', () => {
       expect(detectMeetingType('Reunião com cliente')).toBe('outro');
-      expect(detectMeetingType('Call de acompanhamento')).toBe('outro');
       expect(detectMeetingType('Almoço de negócios')).toBe('outro');
     });
   });
@@ -132,18 +139,20 @@ describe('calculateMetrics', () => {
     createTestEvent({ ...baseEvent, title: 'Área Cross - Seguros' }),
     createTestEvent({ ...baseEvent, title: 'Cross Previdência' }),
     createTestEvent({ ...baseEvent, title: 'Reunião qualquer' }),
+    createTestEvent({ ...baseEvent, title: 'Reunião de acompanhamento' }),
     createTestEvent({ ...baseEvent, title: 'R1 - Cancelado', status: 'cancelled' }),
   ];
 
-  it('deve contar corretamente R1, R2 e Áreas Cross', () => {
+  it('deve contar corretamente R1, R2, acompanhamento e Áreas Cross', () => {
     const start = new Date('2025-01-01');
     const end = new Date('2025-01-31');
     const metrics = calculateMetrics(events, start, end, 'Janeiro 2025');
 
     expect(metrics.r1Count).toBe(2); // R1 Cliente 1, R1 Cliente 2 (não o cancelado)
     expect(metrics.r2Count).toBe(1); // R2 Cliente 3
+    expect(metrics.acompanhamentoCount).toBe(1); // Reunião de acompanhamento
     expect(metrics.areasCrossCount).toBe(2); // Área Cross Seguros, Cross Previdência
-    expect(metrics.totalMeetings).toBe(6); // Todos menos o cancelado
+    expect(metrics.totalMeetings).toBe(7); // Todos menos o cancelado
   });
 
   it('não deve contar eventos cancelados', () => {
@@ -151,8 +160,8 @@ describe('calculateMetrics', () => {
     const end = new Date('2025-01-31');
     const metrics = calculateMetrics(events, start, end, 'Test');
 
-    // Temos 7 eventos, mas 1 está cancelado
-    expect(metrics.totalMeetings).toBe(6);
+    // Temos 8 eventos, mas 1 está cancelado
+    expect(metrics.totalMeetings).toBe(7);
   });
 
   it('deve filtrar por período corretamente', () => {
@@ -190,6 +199,7 @@ describe('calculateMetrics', () => {
 
     expect(metrics.r1Count).toBe(0);
     expect(metrics.r2Count).toBe(0);
+    expect(metrics.acompanhamentoCount).toBe(0);
     expect(metrics.areasCrossCount).toBe(0);
     expect(metrics.totalMeetings).toBe(0);
   });

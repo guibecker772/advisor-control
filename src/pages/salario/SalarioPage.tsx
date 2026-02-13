@@ -1,12 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus, Zap, AlertTriangle } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { toastSuccess, toastError, toastWarning } from '../../lib/toast';
+import { subscribeDataInvalidation } from '../../lib/dataInvalidation';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { salarioRepository, offerReservationRepository, crossRepository } from '../../services/repositories';
+import { salarioRepository, crossRepository } from '../../services/repositories';
+import { listOffersByCompetenceMonth } from '../../services/offerReservationService';
 import { salarioSchema, type Salario, type SalarioInput, type Cross, type SalarioClasse, type OfferReservation } from '../../domain/types';
 import {
   formatCurrency,
@@ -15,13 +17,69 @@ import {
   getNomeMes,
   normalizarPercentual,
   CLASSES_SALARIO,
-  filtrarOfertasPorMesAno,
   mapearOfertasParaClasses,
   calcularReceitaCrossMensal,
 } from '../../domain/calculations';
 import { DataTable, CurrencyCell, ActionButtons } from '../../components/shared/DataTable';
-import { Modal, ConfirmDelete } from '../../components/shared/Modal';
+import { Modal, ConfirmDialog, PageHeader, PageSkeleton } from '../../components/ui';
 import { Input, TextArea } from '../../components/shared/FormFields';
+import {
+  type OfferStatus,
+  competenceMonthToMonthYear,
+  getCurrentCompetenceMonth,
+} from '../../domain/offers';
+
+const SALARY_SYNC_OFFER_STATUSES: OfferStatus[] = ['PENDENTE', 'RESERVADA', 'LIQUIDADA'];
+const MONEY_TOLERANCE = 0.01;
+const PERCENT_TOLERANCE = 0.000001;
+
+function isClose(a: number | undefined, b: number | undefined, tolerance = MONEY_TOLERANCE): boolean {
+  return Math.abs((a ?? 0) - (b ?? 0)) <= tolerance;
+}
+
+function areClassesEquivalent(current: SalarioClasse[] = [], next: SalarioClasse[] = []): boolean {
+  if (current.length !== next.length) return false;
+
+  const currentSorted = [...current].sort((a, b) => a.classe.localeCompare(b.classe));
+  const nextSorted = [...next].sort((a, b) => a.classe.localeCompare(b.classe));
+
+  return currentSorted.every((currentClass, index) => {
+    const nextClass = nextSorted[index];
+    return (
+      currentClass.classe === nextClass.classe
+      && isClose(currentClass.receita, nextClass.receita)
+      && isClose(currentClass.repassePercent, nextClass.repassePercent, PERCENT_TOLERANCE)
+      && isClose(currentClass.majoracaoPercent, nextClass.majoracaoPercent, PERCENT_TOLERANCE)
+    );
+  });
+}
+
+function buildSalarioDefaults(
+  mes: number,
+  ano: number,
+  classes: SalarioClasse[],
+  receitaTotal: number,
+  receitaCross: number,
+): Omit<Salario, 'id'> {
+  return {
+    mes,
+    ano,
+    classes,
+    receitaTotal,
+    receitaCross,
+    percentualComissao: 30,
+    percentualCross: 50,
+    irPercent: 0,
+    premiacao: 0,
+    ajuste: 0,
+    bonusFixo: 0,
+    bonusMeta: 0,
+    adiantamentos: 0,
+    descontos: 0,
+    irrf: 0,
+    observacoes: '',
+  };
+}
 
 export default function SalarioPage() {
   const { user } = useAuth();
@@ -36,8 +94,11 @@ export default function SalarioPage() {
   // Classes editáveis no modal
   const [classes, setClasses] = useState<SalarioClasse[]>([]);
 
-  const [anoFiltro, setAnoFiltro] = useState(new Date().getFullYear());
-  const [mesFiltro, setMesFiltro] = useState(new Date().getMonth() + 1);
+  const [competenceMonthFiltro, setCompetenceMonthFiltro] = useState<string>(getCurrentCompetenceMonth());
+
+  const monthYear = useMemo(() => competenceMonthToMonthYear(competenceMonthFiltro), [competenceMonthFiltro]);
+  const anoFiltro = monthYear?.ano ?? new Date().getFullYear();
+  const mesFiltro = monthYear?.mes ?? new Date().getMonth() + 1;
 
   const {
     register,
@@ -78,43 +139,106 @@ export default function SalarioPage() {
     return calcularSalarioCompletoV2(salarioTemp);
   }, [watchedValues, classes]);
   
-
-
-  useEffect(() => {
+  const loadSalarios = useCallback(async () => {
     if (!user) return;
-
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const data = await salarioRepository.getByYear(user.uid, anoFiltro);
-        setSalarios(data);
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        toast.error('Erro ao carregar dados');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
+    try {
+      setLoading(true);
+      const data = await salarioRepository.getByYear(user.uid, anoFiltro);
+      setSalarios(data);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      toastError('Erro ao carregar dados');
+    } finally {
+      setLoading(false);
+    }
   }, [user, anoFiltro]);
 
+  const syncSalarioByCompetencia = useCallback(async () => {
+    if (!user) return;
+
+    const periodo = competenceMonthToMonthYear(competenceMonthFiltro);
+    if (!periodo) return;
+
+    try {
+      const { mes, ano } = periodo;
+      const [ofertasMes, crossData, salariosMes] = await Promise.all([
+        listOffersByCompetenceMonth(user.uid, competenceMonthFiltro, SALARY_SYNC_OFFER_STATUSES),
+        crossRepository.getAll(user.uid),
+        salarioRepository.getByMonth(user.uid, mes, ano),
+      ]) as [OfferReservation[], Cross[], Salario[]];
+
+      const salarioExistente = salariosMes[0] ?? null;
+      const classesSincronizadas = mapearOfertasParaClasses(ofertasMes, salarioExistente?.classes || []);
+      const receitaTotalSincronizada = classesSincronizadas.reduce((sum, classe) => sum + (classe.receita || 0), 0);
+      const receitaCrossSincronizada = calcularReceitaCrossMensal(crossData, mes, ano);
+
+      if (salarioExistente?.id) {
+        const shouldUpdate = !areClassesEquivalent(salarioExistente.classes || [], classesSincronizadas)
+          || !isClose(salarioExistente.receitaTotal, receitaTotalSincronizada)
+          || !isClose(salarioExistente.receitaCross, receitaCrossSincronizada);
+
+        if (!shouldUpdate) return;
+
+        const updated = await salarioRepository.update(
+          salarioExistente.id,
+          {
+            classes: classesSincronizadas,
+            receitaTotal: receitaTotalSincronizada,
+            receitaCross: receitaCrossSincronizada,
+          },
+          user.uid,
+        );
+
+        if (updated) {
+          await loadSalarios();
+        }
+        return;
+      }
+
+      const created = await salarioRepository.create(
+        buildSalarioDefaults(mes, ano, classesSincronizadas, receitaTotalSincronizada, receitaCrossSincronizada),
+        user.uid,
+      );
+      if (created) {
+        await loadSalarios();
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar salário por competência:', error);
+      toastError('Erro ao sincronizar salário por competência');
+    }
+  }, [user, competenceMonthFiltro, loadSalarios]);
+
+  useEffect(() => {
+    void loadSalarios();
+  }, [loadSalarios]);
+
+  useEffect(() => {
+    void syncSalarioByCompetencia();
+  }, [syncSalarioByCompetencia]);
+
+  useEffect(() => {
+    return subscribeDataInvalidation(['offers', 'salary'], async () => {
+      await syncSalarioByCompetencia();
+      await loadSalarios();
+    });
+  }, [loadSalarios, syncSalarioByCompetencia]);
+
   // Buscar dados reais do mês para preencher automaticamente (Auto-preencher)
-  const fetchDadosMes = async (mes: number, ano: number) => {
+  const fetchDadosMes = async (competenceMonth: string) => {
     if (!user) return;
 
     try {
       setAutoFilling(true);
-      const [ofertasData, crossData] = await Promise.all([
-        offerReservationRepository.getAll(user.uid),
+      const [ofertasMes, crossData] = await Promise.all([
+        listOffersByCompetenceMonth(user.uid, competenceMonth, ['LIQUIDADA']),
         crossRepository.getAll(user.uid),
       ]) as [OfferReservation[], Cross[]];
-
-      // Filtrar ofertas do mês/ano (por dataReserva + efetuadas)
-      const ofertasMes = filtrarOfertasPorMesAno(ofertasData, mes, ano);
+      const period = competenceMonthToMonthYear(competenceMonth);
+      const mes = period?.mes ?? mesFiltro;
+      const ano = period?.ano ?? anoFiltro;
       
       if (ofertasMes.length === 0) {
-        toast('Nenhuma oferta efetuada encontrada para este mês. Verifique se há ofertas com Data Reserva neste período.', { icon: '⚠️' });
+        toastWarning('Nenhuma oferta liquidada encontrada para esta competência.');
         // Mesmo sem ofertas, permitir continuar para preencher Cross se houver
       }
 
@@ -136,10 +260,10 @@ export default function SalarioPage() {
         `Ofertas: ${ofertasMes.length} (R$ ${receitaTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })})`,
         `Cross: R$ ${receitaCross.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
       ].join(' | ');
-      toast.success(`Receitas carregadas! ${mensagem}`);
+      toastSuccess(`Receitas carregadas! ${mensagem}`);
     } catch (error) {
       console.error('Erro ao buscar dados:', error);
-      toast.error('Erro ao buscar dados do mês');
+      toastError('Erro ao buscar dados do mês');
     } finally {
       setAutoFilling(false);
     }
@@ -155,7 +279,7 @@ export default function SalarioPage() {
     }));
   };
 
-  const openModal = (salario?: Salario) => {
+  const openModal = useCallback((salario?: Salario) => {
     if (salario) {
       setSelectedSalario(salario);
       setClasses(salario.classes || []);
@@ -189,7 +313,7 @@ export default function SalarioPage() {
       });
     }
     setModalOpen(true);
-  };
+  }, [reset, mesFiltro, anoFiltro]);
 
   const onSubmit = async (data: SalarioInput) => {
     if (!user) return;
@@ -213,12 +337,12 @@ export default function SalarioPage() {
           setSalarios((prev) =>
             prev.map((s) => (s.id === selectedSalario.id ? updated : s))
           );
-          toast.success('Salário atualizado com sucesso!');
+          toastSuccess('Salário atualizado com sucesso!');
         }
       } else {
         const created = await salarioRepository.create(parsed, user.uid);
         setSalarios((prev) => [...prev, created]);
-        toast.success('Salário criado com sucesso!');
+        toastSuccess('Salário criado com sucesso!');
       }
 
       setModalOpen(false);
@@ -226,7 +350,7 @@ export default function SalarioPage() {
       setClasses([]);
     } catch (error) {
       console.error('Erro ao salvar salário:', error);
-      toast.error('Erro ao salvar salário');
+      toastError('Erro ao salvar salário');
     } finally {
       setSaving(false);
     }
@@ -239,12 +363,12 @@ export default function SalarioPage() {
       setSaving(true);
       await salarioRepository.delete(selectedSalario.id, user.uid);
       setSalarios((prev) => prev.filter((s) => s.id !== selectedSalario.id));
-      toast.success('Salário excluído com sucesso!');
+      toastSuccess('Salário excluído com sucesso!');
       setDeleteModalOpen(false);
       setSelectedSalario(null);
     } catch (error) {
       console.error('Erro ao excluir salário:', error);
-      toast.error('Erro ao excluir salário');
+      toastError('Erro ao excluir salário');
     } finally {
       setSaving(false);
     }
@@ -294,7 +418,7 @@ export default function SalarioPage() {
         header: 'Bruto',
         cell: (info) => {
           const calc = calcularSalarioCompletoV2(info.row.original);
-          return <span className="font-medium text-green-600">{formatCurrency(calc.salarioBruto)}</span>;
+          return <span className="font-medium" style={{ color: 'var(--color-success)' }}>{formatCurrency(calc.salarioBruto)}</span>;
         },
       },
       {
@@ -302,7 +426,7 @@ export default function SalarioPage() {
         header: 'IR',
         cell: (info) => {
           const calc = calcularSalarioCompletoV2(info.row.original);
-          return <span className="text-red-600">{formatCurrency(calc.irValue)}</span>;
+          return <span style={{ color: 'var(--color-danger)' }}>{formatCurrency(calc.irValue)}</span>;
         },
       },
       {
@@ -310,7 +434,7 @@ export default function SalarioPage() {
         header: 'Líquido',
         cell: (info) => {
           const calc = calcularSalarioCompletoV2(info.row.original);
-          return <span className="font-bold text-blue-600">{formatCurrency(calc.salarioLiquido)}</span>;
+          return <span className="font-bold" style={{ color: 'var(--color-info)' }}>{formatCurrency(calc.salarioLiquido)}</span>;
         },
       },
       {
@@ -327,7 +451,7 @@ export default function SalarioPage() {
         ),
       },
     ],
-    []
+    [openModal]
   );
 
   const totais = useMemo(() => {
@@ -347,73 +471,56 @@ export default function SalarioPage() {
   }, [salarios]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <PageSkeleton showKpis kpiCount={5} />;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Salário</h1>
-          <p className="text-gray-600">Cálculo de comissões e salário - {anoFiltro}</p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <select
-            value={mesFiltro}
-            onChange={(e) => setMesFiltro(Number(e.target.value))}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((mes) => (
-              <option key={mes} value={mes}>
-                {getNomeMes(mes)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={anoFiltro}
-            onChange={(e) => setAnoFiltro(Number(e.target.value))}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-          >
-            {[2024, 2025, 2026, 2027].map((ano) => (
-              <option key={ano} value={ano}>
-                {ano}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => openModal()}
-            className="flex items-center px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition-colors"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Novo Mês
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Salário"
+        subtitle={`Cálculo de comissões e salário - ${anoFiltro}`}
+        actions={
+          <>
+            <input
+              type="month"
+              value={competenceMonthFiltro}
+              onChange={(event) => setCompetenceMonthFiltro(event.target.value || getCurrentCompetenceMonth())}
+              className="px-3 py-2 rounded-lg text-sm focus-gold"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+              aria-label="Competência"
+            />
+            <button
+              onClick={() => openModal()}
+              className="flex items-center px-4 py-2 rounded-lg text-sm font-medium hover:brightness-110 transition-all"
+              style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Novo Mês
+            </button>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Meses Lançados</p>
-          <p className="text-2xl font-bold text-gray-900">{totais.meses}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border-subtle)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Meses Lançados</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>{totais.meses}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Receita Total</p>
-          <p className="text-2xl font-bold text-blue-600">{formatCurrency(totais.receitaTotal)}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border-subtle)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Receita Total</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-info)' }}>{formatCurrency(totais.receitaTotal)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Bruto Acumulado</p>
-          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.brutoTotal)}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border-subtle)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Bruto Acumulado</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(totais.brutoTotal)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">IR Total</p>
-          <p className="text-2xl font-bold text-red-600">{formatCurrency(totais.irTotal)}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border-subtle)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>IR Total</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-danger)' }}>{formatCurrency(totais.irTotal)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Líquido Acumulado</p>
-          <p className="text-2xl font-bold text-yellow-600">{formatCurrency(totais.liquidoTotal)}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)', border: '1px solid var(--color-border-subtle)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Líquido Acumulado</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-gold)' }}>{formatCurrency(totais.liquidoTotal)}</p>
         </div>
       </div>
 
@@ -451,9 +558,10 @@ export default function SalarioPage() {
             <div className="flex items-end md:col-span-2">
               <button
                 type="button"
-                onClick={() => fetchDadosMes(watchedValues.mes, watchedValues.ano)}
+                onClick={() => fetchDadosMes(`${watchedValues.ano}-${String(watchedValues.mes).padStart(2, '0')}`)}
                 disabled={autoFilling}
-                className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors w-full justify-center"
+                className="flex items-center px-4 py-2 rounded-lg disabled:opacity-50 hover:brightness-110 transition-all w-full justify-center text-sm font-medium"
+                style={{ backgroundColor: 'var(--color-success)', color: 'var(--color-text-inverse)' }}
               >
                 <Zap className="w-4 h-4 mr-2" />
                 {autoFilling ? 'Carregando...' : 'Auto-preencher Receitas do Mês'}
@@ -462,11 +570,11 @@ export default function SalarioPage() {
           </div>
 
           {/* Tabela de Classes */}
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-3 flex items-center">
+          <div className="border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+            <h3 className="text-sm font-medium mb-3 flex items-center" style={{ color: 'var(--color-text-secondary)' }}>
               Receitas por Classe
               {classes.length === 0 && (
-                <span className="ml-2 text-xs text-amber-600 flex items-center">
+                <span className="ml-2 text-xs flex items-center" style={{ color: 'var(--color-warning)' }}>
                   <AlertTriangle className="w-3 h-3 mr-1" />
                   Clique em "Auto-preencher" para carregar
                 </span>
@@ -474,25 +582,25 @@ export default function SalarioPage() {
             </h3>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-gray-50">
+                <thead style={{ backgroundColor: 'var(--color-surface-2)' }}>
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium text-gray-600">Classe</th>
-                    <th className="px-3 py-2 text-right font-medium text-gray-600">Receita</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-600">Repasse %</th>
-                    <th className="px-3 py-2 text-center font-medium text-gray-600">Majoração %</th>
-                    <th className="px-3 py-2 text-right font-medium text-gray-600">Repasse R$</th>
-                    <th className="px-3 py-2 text-right font-medium text-gray-600">Major. R$</th>
-                    <th className="px-3 py-2 text-right font-medium text-gray-600">Bruto</th>
+                    <th className="px-3 py-2 text-left font-medium" style={{ color: 'var(--color-text-secondary)' }}>Classe</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--color-text-secondary)' }}>Receita</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--color-text-secondary)' }}>Repasse %</th>
+                    <th className="px-3 py-2 text-center font-medium" style={{ color: 'var(--color-text-secondary)' }}>Majoração %</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--color-text-secondary)' }}>Repasse R$</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--color-text-secondary)' }}>Major. R$</th>
+                    <th className="px-3 py-2 text-right font-medium" style={{ color: 'var(--color-text-secondary)' }}>Bruto</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y" style={{ borderColor: 'var(--color-border-subtle)' }}>
                   {classes.map((classe, idx) => {
                     const def = CLASSES_SALARIO.find(c => c.id === classe.classe);
                     const repasseVal = classe.receita * classe.repassePercent;
                     const majorVal = classe.receita * classe.majoracaoPercent;
                     const bruto = repasseVal + majorVal;
                     return (
-                      <tr key={classe.classe} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <tr key={classe.classe} style={{ backgroundColor: idx % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-2)' }}>
                         <td className="px-3 py-2 font-medium">{def?.label || classe.classe}</td>
                         <td className="px-3 py-2 text-right">{formatCurrency(classe.receita)}</td>
                         <td className="px-3 py-2">
@@ -503,7 +611,8 @@ export default function SalarioPage() {
                             max="100"
                             value={Math.round(classe.repassePercent * 100)}
                             onChange={(e) => updateClassePercent(classe.classe, 'repassePercent', Number(e.target.value) / 100)}
-                            className="w-16 px-2 py-1 text-center border rounded text-sm"
+                            className="w-16 px-2 py-1 text-center rounded text-sm"
+                            style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
                           />
                         </td>
                         <td className="px-3 py-2">
@@ -514,25 +623,26 @@ export default function SalarioPage() {
                             max="100"
                             value={Math.round(classe.majoracaoPercent * 100)}
                             onChange={(e) => updateClassePercent(classe.classe, 'majoracaoPercent', Number(e.target.value) / 100)}
-                            className="w-16 px-2 py-1 text-center border rounded text-sm"
+                            className="w-16 px-2 py-1 text-center rounded text-sm"
+                            style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
                           />
                         </td>
-                        <td className="px-3 py-2 text-right text-green-600">{formatCurrency(repasseVal)}</td>
-                        <td className="px-3 py-2 text-right text-blue-600">{formatCurrency(majorVal)}</td>
+                        <td className="px-3 py-2 text-right" style={{ color: 'var(--color-success)' }}>{formatCurrency(repasseVal)}</td>
+                        <td className="px-3 py-2 text-right" style={{ color: 'var(--color-info)' }}>{formatCurrency(majorVal)}</td>
                         <td className="px-3 py-2 text-right font-medium">{formatCurrency(bruto)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
                 {classes.length > 0 && (
-                  <tfoot className="bg-gray-100 font-medium">
+                  <tfoot className="font-medium" style={{ backgroundColor: 'var(--color-surface-2)' }}>
                     <tr>
                       <td className="px-3 py-2">Total Classes</td>
                       <td className="px-3 py-2 text-right">{formatCurrency(salarioCalcV2.receitaTotalClasses)}</td>
                       <td className="px-3 py-2"></td>
                       <td className="px-3 py-2"></td>
-                      <td className="px-3 py-2 text-right text-green-600">{formatCurrency(salarioCalcV2.repasseTotalClasses)}</td>
-                      <td className="px-3 py-2 text-right text-blue-600">{formatCurrency(salarioCalcV2.majoracaoTotalClasses)}</td>
+                      <td className="px-3 py-2 text-right" style={{ color: 'var(--color-success)' }}>{formatCurrency(salarioCalcV2.repasseTotalClasses)}</td>
+                      <td className="px-3 py-2 text-right" style={{ color: 'var(--color-info)' }}>{formatCurrency(salarioCalcV2.majoracaoTotalClasses)}</td>
                       <td className="px-3 py-2 text-right">{formatCurrency(salarioCalcV2.brutoClasses)}</td>
                     </tr>
                   </tfoot>
@@ -542,8 +652,8 @@ export default function SalarioPage() {
           </div>
 
           {/* Cross Selling (legado) */}
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Cross Selling</h3>
+          <div className="border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+            <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-secondary)' }}>Cross Selling</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
                 label="Receita Cross"
@@ -565,8 +675,8 @@ export default function SalarioPage() {
           </div>
 
           {/* IR e Premiação */}
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">IR e Premiação</h3>
+          <div className="border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+            <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-secondary)' }}>IR e Premiação</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input
                 label="IR % (sobre bruto)"
@@ -596,36 +706,36 @@ export default function SalarioPage() {
           </div>
 
           {/* Resumo do cálculo */}
-          <div className="border-t pt-4 bg-gray-50 -mx-6 px-6 py-4 mt-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">Resumo do Cálculo</h3>
+          <div className="border-t pt-4 -mx-6 px-6 py-4 mt-4" style={{ backgroundColor: 'var(--color-surface-2)', borderColor: 'var(--color-border-subtle)' }}>
+            <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--color-text-secondary)' }}>Resumo do Cálculo</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
-                <span className="text-gray-500">Repasse Classes:</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>Repasse Classes:</span>
                 <span className="ml-2 font-medium">{formatCurrency(salarioCalcV2.repasseTotalClasses)}</span>
               </div>
               <div>
-                <span className="text-gray-500">Majoração:</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>Majoração:</span>
                 <span className="ml-2 font-medium">{formatCurrency(salarioCalcV2.majoracaoTotalClasses)}</span>
               </div>
               <div>
-                <span className="text-gray-500">Cross:</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>Cross:</span>
                 <span className="ml-2 font-medium">{formatCurrency(salarioCalcV2.comissaoCross)}</span>
               </div>
               <div>
-                <span className="text-gray-500">Premiação + Ajuste:</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>Premiação + Ajuste:</span>
                 <span className="ml-2 font-medium">{formatCurrency(salarioCalcV2.premiacao + salarioCalcV2.ajuste)}</span>
               </div>
               <div className="md:col-span-2">
-                <span className="text-gray-500">Bruto:</span>
-                <span className="ml-2 font-bold text-green-600 text-lg">{formatCurrency(salarioCalcV2.salarioBruto)}</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>Bruto:</span>
+                <span className="ml-2 font-bold text-lg" style={{ color: 'var(--color-success)' }}>{formatCurrency(salarioCalcV2.salarioBruto)}</span>
               </div>
               <div>
-                <span className="text-gray-500">IR ({formatPercent(salarioCalcV2.irPercent * 100)}):</span>
-                <span className="ml-2 font-medium text-red-600">{formatCurrency(salarioCalcV2.irValue)}</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>IR ({formatPercent(salarioCalcV2.irPercent * 100)}):</span>
+                <span className="ml-2 font-medium" style={{ color: 'var(--color-danger)' }}>{formatCurrency(salarioCalcV2.irValue)}</span>
               </div>
               <div>
-                <span className="text-gray-500">Líquido:</span>
-                <span className="ml-2 font-bold text-blue-600 text-xl">{formatCurrency(salarioCalcV2.salarioLiquido)}</span>
+                <span style={{ color: 'var(--color-text-muted)' }}>Líquido:</span>
+                <span className="ml-2 font-bold text-xl" style={{ color: 'var(--color-info)' }}>{formatCurrency(salarioCalcV2.salarioLiquido)}</span>
               </div>
             </div>
           </div>
@@ -640,14 +750,16 @@ export default function SalarioPage() {
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 text-sm font-medium rounded-lg transition-colors"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-yellow-600 rounded-md hover:bg-yellow-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium rounded-lg hover:brightness-110 transition-all disabled:opacity-50"
+              style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
             >
               {saving ? 'Salvando...' : selectedSalario ? 'Atualizar' : 'Criar'}
             </button>
@@ -655,12 +767,17 @@ export default function SalarioPage() {
         </form>
       </Modal>
 
-      <ConfirmDelete
+      <ConfirmDialog
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={handleDelete}
+        title="Excluir Salário"
+        message="Tem certeza que deseja excluir este registro de salário? Esta ação não pode ser desfeita."
+        confirmText="Excluir"
+        variant="danger"
         loading={saving}
       />
     </div>
   );
 }
+

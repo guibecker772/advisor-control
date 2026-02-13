@@ -3,15 +3,16 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
-import toast from 'react-hot-toast';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { reservaRepository, clienteRepository } from '../../services/repositories';
 import { reservaSchema, type Reserva, type ReservaInput, type Cliente } from '../../domain/types';
 import { formatCurrency } from '../../domain/calculations';
 import { DataTable, CurrencyCell, StatusBadge, ActionButtons } from '../../components/shared/DataTable';
-import { Modal, ConfirmDelete } from '../../components/shared/Modal';
+import { Modal } from '../../components/shared/Modal';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
+import { ConfirmDialog, PageHeader, PageSkeleton } from '../../components/ui';
+import { toastSuccess, toastError } from '../../lib/toast';
 
 const tipoOptions = [
   { value: 'aporte', label: 'Aporte' },
@@ -65,7 +66,7 @@ export default function ReservasPage() {
         setClientes(clienteData);
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
-        toast.error('Erro ao carregar dados');
+        toastError('Erro ao carregar dados');
       } finally {
         setLoading(false);
       }
@@ -117,19 +118,19 @@ export default function ReservasPage() {
           setReservas((prev) =>
             prev.map((r) => (r.id === selectedReserva.id ? updated : r))
           );
-          toast.success('Reserva atualizada com sucesso!');
+          toastSuccess('Reserva atualizada com sucesso!');
         }
       } else {
         const created = await reservaRepository.create(dataWithCliente, user.uid);
         setReservas((prev) => [...prev, created]);
-        toast.success('Reserva criada com sucesso!');
+        toastSuccess('Reserva criada com sucesso!');
       }
 
       setModalOpen(false);
       reset();
     } catch (error) {
       console.error('Erro ao salvar reserva:', error);
-      toast.error('Erro ao salvar reserva');
+      toastError('Erro ao salvar reserva');
     } finally {
       setSaving(false);
     }
@@ -142,12 +143,12 @@ export default function ReservasPage() {
       setSaving(true);
       await reservaRepository.delete(selectedReserva.id, user.uid);
       setReservas((prev) => prev.filter((r) => r.id !== selectedReserva.id));
-      toast.success('Reserva excluída com sucesso!');
+      toastSuccess('Reserva excluída com sucesso!');
       setDeleteModalOpen(false);
       setSelectedReserva(null);
     } catch (error) {
       console.error('Erro ao excluir reserva:', error);
-      toast.error('Erro ao excluir reserva');
+      toastError('Erro ao excluir reserva');
     } finally {
       setSaving(false);
     }
@@ -168,9 +169,9 @@ export default function ReservasPage() {
 
   const getTipoColor = (tipo: string): string => {
     if (tipo === 'aporte' || tipo === 'transferencia_entrada') {
-      return 'text-green-600';
+      return 'var(--color-success)';
     }
-    return 'text-red-600';
+    return 'var(--color-danger)';
   };
 
   const columns = useMemo<ColumnDef<Reserva>[]>(
@@ -186,7 +187,7 @@ export default function ReservasPage() {
         cell: (info) => {
           const tipo = info.getValue() as string;
           const option = tipoOptions.find((t) => t.value === tipo);
-          return <span className={getTipoColor(tipo)}>{option?.label || tipo}</span>;
+          return <span style={{ color: getTipoColor(tipo) }}>{option?.label || tipo}</span>;
         },
       },
       {
@@ -254,49 +255,48 @@ export default function ReservasPage() {
   }, [reservas]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <PageSkeleton showKpis kpiCount={5} rows={6} />;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reservas</h1>
-          <p className="text-gray-600">Aportes, resgates e transferências</p>
-        </div>
-        <button
-          onClick={() => openModal()}
-          className="flex items-center px-4 py-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Nova Reserva
-        </button>
-      </div>
+      <PageHeader
+        title="Reservas"
+        subtitle="Aportes, resgates e transferências"
+        actions={
+          <button
+            onClick={() => openModal()}
+            className="flex items-center px-4 py-2 rounded-md transition-colors"
+            style={{ backgroundColor: 'var(--color-gold)', color: 'white' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--color-gold-hover)')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'var(--color-gold)')}
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Nova Reserva
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Total</p>
-          <p className="text-2xl font-bold text-gray-900">{totais.total}</p>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Total</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>{totais.total}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Pendentes</p>
-          <p className="text-2xl font-bold text-yellow-600">{totais.pendentes}</p>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Pendentes</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-warning)' }}>{totais.pendentes}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Aportes</p>
-          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.aportes)}</p>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Aportes</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(totais.aportes)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Resgates</p>
-          <p className="text-2xl font-bold text-red-600">{formatCurrency(totais.resgates)}</p>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Resgates</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-danger)' }}>{formatCurrency(totais.resgates)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Saldo</p>
-          <p className={`text-2xl font-bold ${totais.saldo >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Saldo</p>
+          <p className="text-2xl font-bold" style={{ color: totais.saldo >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
             {formatCurrency(totais.saldo)}
           </p>
         </div>
@@ -370,14 +370,16 @@ export default function ReservasPage() {
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 text-sm font-medium rounded-md border transition-colors"
+              style={{ color: 'var(--color-text)', backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-teal-600 rounded-md hover:bg-teal-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium rounded-md disabled:opacity-50 transition-colors"
+              style={{ backgroundColor: 'var(--color-gold)', color: 'white' }}
             >
               {saving ? 'Salvando...' : selectedReserva ? 'Atualizar' : 'Criar'}
             </button>
@@ -385,11 +387,15 @@ export default function ReservasPage() {
         </form>
       </Modal>
 
-      <ConfirmDelete
+      <ConfirmDialog
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={handleDelete}
         loading={saving}
+        title="Excluir Reserva"
+        message="Tem certeza que deseja excluir esta reserva? Esta ação não pode ser desfeita."
+        confirmText="Excluir"
+        variant="danger"
       />
     </div>
   );

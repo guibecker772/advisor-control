@@ -770,38 +770,79 @@ export interface MonthlyActuals {
   transferenciaXp: number;
 }
 
+type CaptacaoKpiCategory = 'CAPTACAO_LIQUIDA' | 'TRANSFERENCIA_XP';
+
+interface CaptacaoLancamentoRuntimeShape {
+  category?: string;
+  type?: string;
+  amount?: number | null;
+  status?: string;
+  cancelled?: boolean;
+  voided?: boolean;
+  deletedAt?: string | null;
+}
+
+function normalizeCaptacaoCategory(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().toUpperCase();
+}
+
+function resolveCaptacaoCategory(lancamento: CaptacaoLancamento): string {
+  const runtime = lancamento as CaptacaoLancamento & CaptacaoLancamentoRuntimeShape;
+  return normalizeCaptacaoCategory(runtime.category ?? runtime.type ?? lancamento.tipo);
+}
+
+function isValidCaptacaoLancamento(lancamento: CaptacaoLancamento): boolean {
+  const runtime = lancamento as CaptacaoLancamento & CaptacaoLancamentoRuntimeShape;
+  if (runtime.cancelled || runtime.voided || Boolean(runtime.deletedAt)) return false;
+  const status = normalizeCaptacaoCategory(runtime.status);
+  if (status === 'CANCELADA' || status === 'CANCELADO' || status === 'CANCELLED' || status === 'VOIDED' || status === 'DELETED') {
+    return false;
+  }
+  return true;
+}
+
+function getCaptacaoBaseMensal(
+  lancamentos: CaptacaoLancamento[],
+  mes: number,
+  ano: number,
+): CaptacaoLancamento[] {
+  return lancamentos.filter((lancamento) => {
+    return lancamento.mes === mes && lancamento.ano === ano && isValidCaptacaoLancamento(lancamento);
+  });
+}
+
+function getSignedCaptacaoAmount(lancamento: CaptacaoLancamento): number {
+  const runtime = lancamento as CaptacaoLancamento & CaptacaoLancamentoRuntimeShape;
+  const amount = typeof runtime.amount === 'number' ? runtime.amount : lancamento.valor;
+  const normalizedAmount = Number.isFinite(amount) ? amount : 0;
+  return lancamento.direcao === 'entrada' ? normalizedAmount : -normalizedAmount;
+}
+
+function sumCaptacaoByCategory(
+  lancamentos: CaptacaoLancamento[],
+  category: CaptacaoKpiCategory,
+): number {
+  return lancamentos
+    .filter((lancamento) => resolveCaptacaoCategory(lancamento) === category)
+    .reduce((sum, lancamento) => sum + getSignedCaptacaoAmount(lancamento), 0);
+}
+
 /**
  * Calcula o realizado de captação líquida (entradas - saídas) para o mês
  * Suporta valores negativos (resgates maiores que entradas)
  */
 export function calcularCaptacaoLiquidaMensal(lancamentos: CaptacaoLancamento[], mes: number, ano: number): number {
-  return lancamentos
-    .filter(l => l.mes === mes && l.ano === ano)
-    .reduce((sum, l) => {
-      const valor = l.valor || 0;
-      // Entradas somam, saídas subtraem
-      if (l.direcao === 'entrada') {
-        return sum + valor;
-      } else {
-        return sum - valor;
-      }
-    }, 0);
+  const base = getCaptacaoBaseMensal(lancamentos, mes, ano);
+  return sumCaptacaoByCategory(base, 'CAPTACAO_LIQUIDA');
 }
 
 /**
  * Calcula o realizado de transferência XP (saldo líquido) para o mês
  */
 export function calcularTransferenciaXpMensal(lancamentos: CaptacaoLancamento[], mes: number, ano: number): number {
-  return lancamentos
-    .filter(l => l.mes === mes && l.ano === ano && l.tipo === 'transferencia_xp')
-    .reduce((sum, l) => {
-      const valor = l.valor || 0;
-      if (l.direcao === 'entrada') {
-        return sum + valor;
-      } else {
-        return sum - valor;
-      }
-    }, 0);
+  const base = getCaptacaoBaseMensal(lancamentos, mes, ano);
+  return sumCaptacaoByCategory(base, 'TRANSFERENCIA_XP');
 }
 
 /**

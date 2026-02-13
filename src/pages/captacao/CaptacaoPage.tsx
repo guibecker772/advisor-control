@@ -1,16 +1,17 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Plus, ArrowUpCircle, ArrowDownCircle, UserCheck, Users } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { Plus, ArrowUpCircle, ArrowDownCircle, UserCheck } from 'lucide-react';
+import { toastSuccess, toastError } from '../../lib/toast';
+import { subscribeDataInvalidation } from '../../lib/dataInvalidation';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { captacaoLancamentoRepository, clienteRepository, prospectRepository } from '../../services/repositories';
 import { captacaoLancamentoSchema, type CaptacaoLancamento, type CaptacaoLancamentoInput, type Cliente, type Prospect } from '../../domain/types';
 import { formatCurrency } from '../../domain/calculations';
 import { DataTable, CurrencyCell, ActionButtons } from '../../components/shared/DataTable';
-import { Modal, ConfirmDelete } from '../../components/shared/Modal';
+import { Modal, ConfirmDialog, PageHeader, PageSkeleton } from '../../components/ui';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
 
 const direcaoOptions = [
@@ -84,58 +85,35 @@ export default function CaptacaoPage() {
 
   const origemWatch = watch('origem');
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!user) return;
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [lancData, clienteData, prospectData] = await Promise.all([
-          captacaoLancamentoRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
-          clienteRepository.getAll(user.uid),
-          prospectRepository.getAll(user.uid),
-        ]);
-        setLancamentos(lancData);
-        setClientes(clienteData);
-        setProspects(prospectData);
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        toast.error('Erro ao carregar dados');
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, [user, mesFiltro, anoFiltro]);
+    try {
+      setLoading(true);
+      const [lancData, clienteData, prospectData] = await Promise.all([
+        captacaoLancamentoRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
+        clienteRepository.getAll(user.uid),
+        prospectRepository.getAll(user.uid),
+      ]);
+      setLancamentos(lancData);
+      setClientes(clienteData);
+      setProspects(prospectData);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      toastError('Erro ao carregar dados');
+    } finally {
+      setLoading(false);
+    }
+  }, [anoFiltro, mesFiltro, user]);
 
-  // ====== DERIVADOS DE PROSPECTS (Etapa 7) ======
-  // Eventos derivados de prospects realizados no mês/ano, com dedupe por sourceRef
-  const derivadosProspects = useMemo(() => {
-    const sourceRefsExistentes = new Set(lancamentos.filter(l => l.sourceRef).map(l => l.sourceRef));
-    return prospects
-      .filter((p) => {
-        if (!p.realizadoData || !p.realizadoValor) return false;
-        const d = new Date(p.realizadoData + 'T00:00:00');
-        return d.getMonth() + 1 === mesFiltro && d.getFullYear() === anoFiltro;
-      })
-      .filter((p) => !sourceRefsExistentes.has(`prospect:${p.id}`))
-      .map((p): CaptacaoLancamento => ({
-        id: `derived-${p.id}`,
-        data: p.realizadoData!,
-        mes: mesFiltro,
-        ano: anoFiltro,
-        direcao: 'entrada',
-        tipo: p.realizadoTipo || 'captacao_liquida',
-        origem: 'prospect',
-        referenciaId: p.id,
-        referenciaNome: p.nome,
-        sourceRef: `prospect:${p.id}`,
-        valor: p.realizadoValor!,
-        observacoes: 'Derivado de Prospect (não persistido)',
-      }));
-  }, [prospects, lancamentos, mesFiltro, anoFiltro]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
-  // Combinar lançamentos persistidos + derivados
-  const lancamentosConsolidados = useMemo(() => [...lancamentos, ...derivadosProspects], [lancamentos, derivadosProspects]);
+  useEffect(() => {
+    return subscribeDataInvalidation(['captacao', 'prospects', 'clients'], async () => {
+      await loadData();
+    });
+  }, [loadData]);
 
   const openModal = (lanc?: CaptacaoLancamento) => {
     if (lanc) {
@@ -195,7 +173,7 @@ export default function CaptacaoPage() {
 
     // Validar bucket obrigatório para origem=cliente
     if (data.origem === 'cliente' && !data.bucket) {
-      toast.error('Selecione OnShore ou OffShore para lançamentos de cliente');
+      toastError('Selecione OnShore ou OffShore para lançamentos de cliente');
       return;
     }
 
@@ -231,7 +209,7 @@ export default function CaptacaoPage() {
             await atualizarCustodiaCliente(parsed.referenciaId, novoDelta, parsed.bucket);
           }
 
-          toast.success('Lançamento atualizado!');
+          toastSuccess('Lançamento atualizado!');
         }
       } else {
         // CRIAÇÃO: aplicar delta na custódia do cliente
@@ -244,13 +222,13 @@ export default function CaptacaoPage() {
           await atualizarCustodiaCliente(parsed.referenciaId, delta, parsed.bucket);
         }
 
-        toast.success('Lançamento criado!');
+        toastSuccess('Lançamento criado!');
       }
       setModalOpen(false);
       reset();
     } catch (error) {
       console.error('Erro ao salvar:', error);
-      toast.error('Erro ao salvar lançamento');
+      toastError('Erro ao salvar lançamento');
     } finally {
       setSaving(false);
     }
@@ -271,27 +249,26 @@ export default function CaptacaoPage() {
 
       await captacaoLancamentoRepository.delete(selectedLancamento.id, user.uid);
       setLancamentos((prev) => prev.filter((l) => l.id !== selectedLancamento.id));
-      toast.success('Lançamento excluído!');
+      toastSuccess('Lançamento excluído!');
       setDeleteModalOpen(false);
       setSelectedLancamento(null);
     } catch (error) {
       console.error('Erro ao excluir:', error);
-      toast.error('Erro ao excluir');
+      toastError('Erro ao excluir');
     } finally {
       setSaving(false);
     }
   };
 
   const kpis = useMemo(() => {
-    const entradas = lancamentosConsolidados.filter((l) => l.direcao === 'entrada').reduce((sum, l) => sum + (l.valor || 0), 0);
-    const saidas = lancamentosConsolidados.filter((l) => l.direcao === 'saida').reduce((sum, l) => sum + (l.valor || 0), 0);
-    const captacaoLiquida = lancamentosConsolidados.filter((l) => l.tipo === 'captacao_liquida')
+    const entradas = lancamentos.filter((l) => l.direcao === 'entrada').reduce((sum, l) => sum + (l.valor || 0), 0);
+    const saidas = lancamentos.filter((l) => l.direcao === 'saida').reduce((sum, l) => sum + (l.valor || 0), 0);
+    const captacaoLiquida = lancamentos.filter((l) => l.tipo === 'captacao_liquida')
       .reduce((sum, l) => sum + (l.direcao === 'entrada' ? l.valor : -l.valor), 0);
-    const transferenciaXP = lancamentosConsolidados.filter((l) => l.tipo === 'transferencia_xp')
+    const transferenciaXP = lancamentos.filter((l) => l.tipo === 'transferencia_xp')
       .reduce((sum, l) => sum + (l.direcao === 'entrada' ? l.valor : -l.valor), 0);
-    const derivados = derivadosProspects.length;
-    return { entradas, saidas, saldo: entradas - saidas, captacaoLiquida, transferenciaXP, derivados };
-  }, [lancamentosConsolidados, derivadosProspects]);
+    return { entradas, saidas, saldo: entradas - saidas, captacaoLiquida, transferenciaXP };
+  }, [lancamentos]);
 
   const columns = useMemo<ColumnDef<CaptacaoLancamento>[]>(() => [
     { accessorKey: 'data', header: 'Data', cell: (info) => info.getValue() },
@@ -301,9 +278,9 @@ export default function CaptacaoPage() {
       cell: (info) => {
         const v = info.getValue() as string;
         return v === 'entrada' ? (
-          <span className="flex items-center text-green-600"><ArrowUpCircle className="w-4 h-4 mr-1" /> Entrada</span>
+          <span className="flex items-center" style={{ color: 'var(--color-success)' }}><ArrowUpCircle className="w-4 h-4 mr-1" /> Entrada</span>
         ) : (
-          <span className="flex items-center text-red-600"><ArrowDownCircle className="w-4 h-4 mr-1" /> Saída</span>
+          <span className="flex items-center" style={{ color: 'var(--color-danger)' }}><ArrowDownCircle className="w-4 h-4 mr-1" /> Saída</span>
         );
       },
     },
@@ -317,9 +294,9 @@ export default function CaptacaoPage() {
         const isDerivado = row.id?.startsWith('derived-');
         return (
           <span className="flex items-center gap-1">
-            {isDerivado && <UserCheck className="w-4 h-4 text-purple-500" />}
+            {isDerivado && <UserCheck className="w-4 h-4" style={{ color: 'var(--color-chart-4)' }} />}
             {origemLabels[val] || val}
-            {isDerivado && <span className="text-xs bg-purple-100 text-purple-700 px-1 rounded">Auto</span>}
+            {isDerivado && <span className="text-xs px-1 rounded" style={{ backgroundColor: 'var(--color-danger-bg)', color: 'var(--chart-4)' }}>Auto</span>}
           </span>
         );
       } 
@@ -341,44 +318,52 @@ export default function CaptacaoPage() {
   ], []);
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>;
+    return <PageSkeleton />;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Captação</h1>
-          <p className="text-gray-600">Lançamentos de entradas e saídas</p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <select value={mesFiltro} onChange={(e) => setMesFiltro(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md">
-            {Array.from({ length: 12 }, (_, i) => (<option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('pt-BR', { month: 'long' })}</option>))}
-          </select>
-          <select value={anoFiltro} onChange={(e) => setAnoFiltro(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md">
-            {[2024, 2025, 2026, 2027].map((a) => (<option key={a} value={a}>{a}</option>))}
-          </select>
-          <button onClick={() => openModal()} className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-            <Plus className="w-5 h-5 mr-2" /> Novo Lançamento
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Captação"
+        subtitle="Lançamentos de entradas e saídas"
+        actions={
+          <div className="flex items-center space-x-4">
+            <select
+              value={mesFiltro}
+              onChange={(e) => setMesFiltro(Number(e.target.value))}
+              className="px-3 py-2 rounded-md text-sm"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            >
+              {Array.from({ length: 12 }, (_, i) => (<option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('pt-BR', { month: 'long' })}</option>))}
+            </select>
+            <select
+              value={anoFiltro}
+              onChange={(e) => setAnoFiltro(Number(e.target.value))}
+              className="px-3 py-2 rounded-md text-sm"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            >
+              {[2024, 2025, 2026, 2027].map((a) => (<option key={a} value={a}>{a}</option>))}
+            </select>
+            <button
+              onClick={() => openModal()}
+              className="flex items-center px-4 py-2 rounded-md text-sm font-medium transition-all hover:brightness-110"
+              style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
+            >
+              <Plus className="w-5 h-5 mr-2" /> Novo Lançamento
+            </button>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-600">Entradas</p><p className="text-2xl font-bold text-green-600">{formatCurrency(kpis.entradas)}</p></div>
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-600">Saídas</p><p className="text-2xl font-bold text-red-600">{formatCurrency(kpis.saidas)}</p></div>
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-600">Saldo do Mês</p><p className={`text-2xl font-bold ${kpis.saldo >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(kpis.saldo)}</p></div>
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-600">Captação Líquida</p><p className="text-2xl font-bold text-blue-600">{formatCurrency(kpis.captacaoLiquida)}</p></div>
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-600">Transferência XP</p><p className="text-2xl font-bold text-purple-600">{formatCurrency(kpis.transferenciaXP)}</p></div>
-        {kpis.derivados > 0 && (
-          <div className="bg-white p-4 rounded-lg shadow border-l-4 border-purple-400">
-            <p className="text-sm text-gray-600 flex items-center gap-1"><Users className="w-4 h-4" /> De Prospects</p>
-            <p className="text-2xl font-bold text-purple-600">{kpis.derivados}</p>
-          </div>
-        )}
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)' }}><p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Entradas</p><p className="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(kpis.entradas)}</p></div>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)' }}><p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Saídas</p><p className="text-2xl font-bold" style={{ color: 'var(--color-danger)' }}>{formatCurrency(kpis.saidas)}</p></div>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)' }}><p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Saldo do Mês</p><p className="text-2xl font-bold" style={{ color: kpis.saldo >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>{formatCurrency(kpis.saldo)}</p></div>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)' }}><p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Captação Líquida</p><p className="text-2xl font-bold" style={{ color: 'var(--color-info)' }}>{formatCurrency(kpis.captacaoLiquida)}</p></div>
+        <div className="p-4 rounded-lg" style={{ backgroundColor: 'var(--color-surface)', boxShadow: 'var(--shadow-sm)' }}><p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Transferência XP</p><p className="text-2xl font-bold" style={{ color: 'var(--color-chart-4)' }}>{formatCurrency(kpis.transferenciaXP)}</p></div>
       </div>
 
-      <DataTable data={lancamentosConsolidados} columns={columns} searchPlaceholder="Buscar lançamentos..." />
+      <DataTable data={lancamentos} columns={columns} searchPlaceholder="Buscar lançamentos..." />
 
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={selectedLancamento ? 'Editar Lançamento' : 'Novo Lançamento'} size="lg">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -423,13 +408,23 @@ export default function CaptacaoPage() {
           <Input label="Valor" type="number" step="0.01" {...register('valor', { valueAsNumber: true })} error={errors.valor?.message} />
           <TextArea label="Observações" {...register('observacoes')} />
           <div className="flex justify-end space-x-3 pt-4">
-            <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Cancelar</button>
-            <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">{saving ? 'Salvando...' : selectedLancamento ? 'Atualizar' : 'Criar'}</button>
+            <button type="button" onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm font-medium rounded-md transition-colors hover:brightness-95" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>Cancelar</button>
+            <button type="submit" disabled={saving} className="px-4 py-2 text-sm font-medium rounded-md transition-all hover:brightness-110 disabled:opacity-50" style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}>{saving ? 'Salvando...' : selectedLancamento ? 'Atualizar' : 'Criar'}</button>
           </div>
         </form>
       </Modal>
 
-      <ConfirmDelete isOpen={deleteModalOpen} onClose={() => setDeleteModalOpen(false)} onConfirm={handleDelete} loading={saving} />
+      <ConfirmDialog
+        isOpen={deleteModalOpen}
+        onClose={() => setDeleteModalOpen(false)}
+        onConfirm={handleDelete}
+        title="Excluir Lançamento"
+        message="Tem certeza que deseja excluir este lançamento? Esta ação não pode ser desfeita."
+        confirmText="Excluir"
+        cancelText="Cancelar"
+        variant="danger"
+        loading={saving}
+      />
     </div>
   );
 }

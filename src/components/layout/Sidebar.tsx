@@ -27,7 +27,7 @@ export default function Sidebar() {
   return (
     <div className="w-64 bg-gray-900 min-h-screen">
       <div className="p-6">
-        <h1 className="text-white text-xl font-bold">Metas Pro</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Metas Pro</h1>
         <p className="text-gray-400 text-sm">Advisor Control</p>
       </div>
       
@@ -39,8 +39,8 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `flex items-center px-6 py-3 text-sm font-medium transition-colors ${
                 isActive
-                  ? 'bg-blue-600 text-white border-r-4 border-blue-400'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  ? 'bg-blue-600 border-r-4 border-blue-400'
+                  : 'text-gray-300 hover:bg-gray-800'
               }`
             }
           >

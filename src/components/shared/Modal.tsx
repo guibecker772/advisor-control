@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+﻿import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -9,7 +9,53 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
+const FOCUSABLE_SELECTOR = [
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'button:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
 export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalProps) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    previouslyFocusedRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+
+    const focusTimer = window.setTimeout(() => {
+      const root = panelRef.current;
+      if (!root) return;
+      const focusTarget = root.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      focusTarget?.focus();
+    }, 0);
+
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleEsc);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', handleEsc);
+      previouslyFocusedRef.current?.focus();
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const sizeClasses = {
@@ -21,30 +67,45 @@ export function Modal({ isOpen, onClose, title, children, size = 'md' }: ModalPr
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
-        {/* Backdrop */}
+      <div className="flex min-h-screen items-center justify-center px-4 py-6 sm:p-4">
         <div
-          className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+          className="fixed inset-0 transition-opacity"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
           onClick={onClose}
+          aria-hidden="true"
         />
 
-        {/* Modal panel */}
         <div
-          className={`relative inline-block w-full ${sizeClasses[size]} bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8`}
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          className={`relative inline-block w-full ${sizeClasses[size]} overflow-hidden rounded-xl text-left transform transition-all sm:my-8`}
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            border: '1px solid var(--color-border)',
+            boxShadow: 'var(--shadow-lg)',
+          }}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h3 className="text-lg font-medium text-gray-900">{title}</h3>
+          <div
+            className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid var(--color-border-subtle)' }}
+          >
+            <h3 id={titleId} className="text-lg font-medium" style={{ color: 'var(--color-text)' }}>
+              {title}
+            </h3>
             <button
+              type="button"
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-500 focus:outline-none"
+              className="focus-gold hover-light inline-flex min-h-10 min-w-10 items-center justify-center rounded-md"
+              style={{ color: 'var(--color-text-muted)' }}
+              aria-label="Fechar modal"
             >
-              <X className="w-5 h-5" />
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          {/* Content */}
-          <div className="px-6 py-4">{children}</div>
+          <div className="max-h-[80vh] overflow-y-auto px-6 py-4">{children}</div>
         </div>
       </div>
     </div>
@@ -72,19 +133,29 @@ export function ConfirmDelete({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
       <div className="space-y-4">
-        <p className="text-gray-600">{message}</p>
-        <div className="flex justify-end space-x-3">
+        <p style={{ color: 'var(--color-text-secondary)' }}>{message}</p>
+        <div className="flex justify-end gap-3">
           <button
+            type="button"
             onClick={onClose}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none disabled:opacity-50"
+            className="focus-gold hover-light rounded-md border px-4 py-2 text-sm font-medium disabled:opacity-50"
+            style={{
+              color: 'var(--color-text-secondary)',
+              borderColor: 'var(--color-border)',
+            }}
           >
             Cancelar
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none disabled:opacity-50"
+            className="focus-gold rounded-md px-4 py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{
+              backgroundColor: 'var(--color-danger)',
+              color: 'var(--color-text-inverse)',
+            }}
           >
             {loading ? 'Excluindo...' : 'Excluir'}
           </button>

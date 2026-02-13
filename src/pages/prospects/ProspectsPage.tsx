@@ -1,41 +1,109 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
+import type { ReactNode } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { type ColumnDef } from '@tanstack/react-table';
-import { Plus, Bell, Phone, Mail, MessageSquare, Users, Calendar, AlertTriangle } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { type ColumnDef, type SortingState } from '@tanstack/react-table';
+import { useSearchParams } from 'react-router-dom';
+import {
+  AlertTriangle,
+  Bell,
+  Calendar,
+  Mail,
+  MessageSquare,
+  Phone,
+  Plus,
+  Users,
+} from 'lucide-react';
+import { toastSuccess, toastError } from '../../lib/toast';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { prospectRepository, prospectInteracaoRepository } from '../../services/repositories';
 import { prospectSchema, type Prospect, type ProspectInput, type ProspectInteracao } from '../../domain/types';
 import { formatCurrency } from '../../domain/calculations';
 import { DataTable, CurrencyCell, StatusBadge, ActionButtons } from '../../components/shared/DataTable';
-import { Modal, ConfirmDelete } from '../../components/shared/Modal';
+import {
+  Badge,
+  Button,
+  Chip,
+  ConfirmDialog,
+  EmptyState,
+  InlineEmpty,
+  Modal,
+  PageContainer,
+  PageHeader,
+  PageSkeleton,
+  SectionCard,
+  SegmentedControl,
+} from '../../components/ui';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
+import SavedViewsControl from '../../components/saved-views/SavedViewsControl';
+import { type SavedViewSnapshot } from '../../lib/savedViews';
+import { emitDataInvalidation, subscribeDataInvalidation } from '../../lib/dataInvalidation';
+import { saveProspectWithConversion } from '../../services/prospectConversionService';
+import ProspectBoardView from './components/ProspectBoardView';
+import ProspectKpiSummary from './components/ProspectKpiSummary';
+import {
+  PROSPECT_ORIGEM_OPTIONS,
+  PROSPECT_STATUS_COLUMNS,
+  PROSPECT_TIPO_OPTIONS,
+  buildInteracoesByProspectMap,
+  type ProspectContactFilter,
+  type ProspectOrigemFilter,
+  type ProspectStatusFilter,
+  type ProspectViewMode,
+  getContactUrgency,
+  getOrigemLabel,
+  getPipeAtualValue,
+  getStatusLabel,
+  getTipoLabel,
+  isProspectAtivo,
+  isProspectContactFilter,
+  isProspectOrigemFilter,
+  isProspectStatusFilter,
+  isProspectViewMode,
+  matchesSearchTerm,
+  normalizeDate,
+  normalizeProspectStatus,
+} from './utils/prospectUi';
 
-const statusOptions = [
-  { value: 'novo', label: 'Novo' },
-  { value: 'em_contato', label: 'Em Contato' },
-  { value: 'qualificado', label: 'Qualificado' },
-  { value: 'proposta', label: 'Proposta' },
+const viewModeOptions = [
+  { value: 'cards', label: 'Cards' },
+  { value: 'table', label: 'Tabela' },
+];
+
+const statusFilterOptions = [
+  { value: 'all', label: 'Todos' },
+  { value: 'active', label: 'Ativos' },
   { value: 'ganho', label: 'Ganho' },
   { value: 'perdido', label: 'Perdido' },
 ];
 
-const origemOptions = [
-  { value: 'indicacao', label: 'Indicação' },
-  { value: 'liberta', label: 'Liberta' },
-  { value: 'linkedin', label: 'LinkedIn' },
-  { value: 'evento', label: 'Evento' },
-  { value: 'site', label: 'Site' },
-  { value: 'cold_call', label: 'Cold Call' },
-  { value: 'outros', label: 'Outros' },
+const contactFilterOptions = [
+  { value: 'all', label: 'Todos' },
+  { value: 'overdue', label: 'Vencidos' },
+  { value: 'today', label: 'Hoje' },
+  { value: 'no_next_step', label: 'Sem próximo passo' },
 ];
 
-const tipoOptions = [
-  { value: 'captacao_liquida', label: 'Captação Líquida' },
-  { value: 'transferencia_xp', label: 'Transferência XP' },
-];
+const statusFilterLabels: Record<ProspectStatusFilter, string> = {
+  all: 'Todos',
+  active: 'Ativos',
+  ganho: 'Ganho',
+  perdido: 'Perdido',
+};
+
+const contactFilterLabels: Record<ProspectContactFilter, string> = {
+  all: 'Todos',
+  overdue: 'Vencidos',
+  today: 'Hoje',
+  no_next_step: 'Sem próximo passo',
+};
+
+const PROSPECT_VIEW_MODE_STORAGE_KEY = 'advisor_control.prospects.viewMode';
+const DEFAULT_VIEW_MODE: ProspectViewMode = 'cards';
+const DEFAULT_STATUS_FILTER: ProspectStatusFilter = 'active';
+const DEFAULT_CONTACT_FILTER: ProspectContactFilter = 'all';
+const DEFAULT_ORIGEM_FILTER: ProspectOrigemFilter = 'all';
 
 const interacaoTipoOptions = [
   { value: 'ligacao', label: 'Ligação' },
@@ -46,7 +114,7 @@ const interacaoTipoOptions = [
   { value: 'outro', label: 'Outro' },
 ];
 
-const interacaoIcons: Record<string, React.ReactNode> = {
+const interacaoIcons: Record<string, ReactNode> = {
   ligacao: <Phone className="w-4 h-4" />,
   reuniao: <Users className="w-4 h-4" />,
   email: <Mail className="w-4 h-4" />,
@@ -55,8 +123,40 @@ const interacaoIcons: Record<string, React.ReactNode> = {
   outro: <Bell className="w-4 h-4" />,
 };
 
+function isWonProspectStatus(status: Prospect['status'] | undefined): boolean {
+  if (!status) return false;
+  const normalized = status.toLowerCase().trim();
+  return normalized === 'ganho' || normalized === 'won' || normalized === 'closedwon' || normalized === 'closed_won';
+}
+
+function getStatusVariant(status: string): 'success' | 'warning' | 'danger' | 'default' {
+  switch (normalizeProspectStatus(status)) {
+    case 'ganho':
+      return 'success';
+    case 'perdido':
+      return 'danger';
+    case 'proposta':
+    case 'qualificado':
+      return 'warning';
+    default:
+      return 'default';
+  }
+}
+
+function getInitialViewMode(): ProspectViewMode {
+  if (typeof window === 'undefined') return DEFAULT_VIEW_MODE;
+  const saved = window.localStorage.getItem(PROSPECT_VIEW_MODE_STORAGE_KEY);
+  return isProspectViewMode(saved) ? saved : DEFAULT_VIEW_MODE;
+}
+
+function getProspectById(prospects: Prospect[], id: string | null): Prospect | undefined {
+  if (!id) return undefined;
+  return prospects.find((prospect) => prospect.id === id);
+}
+
 export default function ProspectsPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [interacoes, setInteracoes] = useState<ProspectInteracao[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,11 +165,20 @@ export default function ProspectsPage() {
   const [detalhesModalOpen, setDetalhesModalOpen] = useState(false);
   const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
   const [saving, setSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [tableSorting, setTableSorting] = useState<SortingState>([]);
+  const [viewMode, setViewMode] = useState<ProspectViewMode>(getInitialViewMode);
+  const [statusFilter, setStatusFilter] = useState<ProspectStatusFilter>(DEFAULT_STATUS_FILTER);
+  const [contactFilter, setContactFilter] = useState<ProspectContactFilter>(DEFAULT_CONTACT_FILTER);
+  const [origemFilter, setOrigemFilter] = useState<ProspectOrigemFilter>(DEFAULT_ORIGEM_FILTER);
+  const [focusInteractionToken, setFocusInteractionToken] = useState(0);
+  const handledQueryRef = useRef<string | null>(null);
 
   const {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm<ProspectInput>({
     resolver: zodResolver(prospectSchema),
@@ -80,36 +189,50 @@ export default function ProspectsPage() {
     },
   });
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!user) return;
 
-    const loadData = async () => {
-      try {
-        setLoading(true);
-        const [prospectsData, interacoesData] = await Promise.all([
-          prospectRepository.getAll(user.uid),
-          prospectInteracaoRepository.getAll(user.uid),
-        ]);
-        setProspects(prospectsData);
-        setInteracoes(interacoesData);
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        toast.error('Erro ao carregar dados');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
+    try {
+      setLoading(true);
+      const [prospectsData, interacoesData] = await Promise.all([
+        prospectRepository.getAll(user.uid),
+        prospectInteracaoRepository.getAll(user.uid),
+      ]);
+      setProspects(prospectsData);
+      setInteracoes(interacoesData);
+    } catch (error) {
+      console.error('Erro ao carregar dados:', error);
+      toastError('Erro ao carregar dados');
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
-  // Lembretes: prospects com próximo contato hoje ou atrasado
-  const lembretes = useMemo(() => {
-    const hoje = new Date().toISOString().split('T')[0];
-    return prospects.filter((p) => p.proximoContato && p.proximoContato <= hoje && !['ganho', 'perdido'].includes(p.status));
-  }, [prospects]);
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
-  const openModal = (prospect?: Prospect) => {
+  useEffect(() => {
+    return subscribeDataInvalidation(['prospects'], async () => {
+      await loadData();
+    });
+  }, [loadData]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(PROSPECT_VIEW_MODE_STORAGE_KEY, viewMode);
+  }, [viewMode]);
+
+  const interacoesByProspect = useMemo(() => {
+    return buildInteracoesByProspectMap(interacoes);
+  }, [interacoes]);
+
+  const statusWatch = watch('status');
+  const realizadoValorWatch = watch('realizadoValor');
+  const realizadoDataWatch = watch('realizadoData');
+  const isWonSelected = isWonProspectStatus(statusWatch);
+
+  const openModal = useCallback((prospect?: Prospect) => {
     if (prospect) {
       setSelectedProspect(prospect);
       reset(prospect);
@@ -133,7 +256,85 @@ export default function ProspectsPage() {
       });
     }
     setModalOpen(true);
-  };
+  }, [reset]);
+
+  const openProspectDetails = useCallback((prospect: Prospect, focusAddInteraction = false) => {
+    setSelectedProspect(prospect);
+    setDetalhesModalOpen(true);
+    if (focusAddInteraction) {
+      setFocusInteractionToken((value) => value + 1);
+    }
+  }, []);
+
+  const getSavedViewSnapshot = useCallback((): SavedViewSnapshot => {
+    const firstSort = tableSorting[0];
+    return {
+      searchTerm,
+      filters: {
+        viewMode,
+        statusFilter,
+        contactFilter,
+        origemFilter,
+      },
+      sort: firstSort ? { id: firstSort.id, desc: firstSort.desc } : null,
+    };
+  }, [contactFilter, origemFilter, searchTerm, statusFilter, tableSorting, viewMode]);
+
+  const applySavedViewSnapshot = useCallback((snapshot: SavedViewSnapshot) => {
+    setSearchTerm(snapshot.searchTerm ?? '');
+    setTableSorting(snapshot.sort ? [{ id: snapshot.sort.id, desc: snapshot.sort.desc }] : []);
+
+    const nextViewMode = typeof snapshot.filters?.viewMode === 'string' ? snapshot.filters.viewMode : undefined;
+    const nextStatusFilter = typeof snapshot.filters?.statusFilter === 'string' ? snapshot.filters.statusFilter : undefined;
+    const nextContactFilter = typeof snapshot.filters?.contactFilter === 'string' ? snapshot.filters.contactFilter : undefined;
+    const nextOrigemFilter = typeof snapshot.filters?.origemFilter === 'string' ? snapshot.filters.origemFilter : undefined;
+
+    setViewMode(isProspectViewMode(nextViewMode) ? nextViewMode : DEFAULT_VIEW_MODE);
+    setStatusFilter(isProspectStatusFilter(nextStatusFilter) ? nextStatusFilter : DEFAULT_STATUS_FILTER);
+    setContactFilter(isProspectContactFilter(nextContactFilter) ? nextContactFilter : DEFAULT_CONTACT_FILTER);
+    setOrigemFilter(isProspectOrigemFilter(nextOrigemFilter) ? nextOrigemFilter : DEFAULT_ORIGEM_FILTER);
+  }, []);
+
+  const clearProspectFilters = useCallback(() => {
+    setStatusFilter(DEFAULT_STATUS_FILTER);
+    setContactFilter(DEFAULT_CONTACT_FILTER);
+    setOrigemFilter(DEFAULT_ORIGEM_FILTER);
+    setSearchTerm('');
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const queryKey = searchParams.toString();
+    if (handledQueryRef.current === queryKey) return;
+    handledQueryRef.current = queryKey;
+
+    const createParam = searchParams.get('create');
+    const openParam = searchParams.get('open');
+    if (!createParam && !openParam) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    let shouldReplace = false;
+
+    if (createParam === '1') {
+      openModal();
+      nextParams.delete('create');
+      shouldReplace = true;
+    }
+
+    if (openParam) {
+      const target = getProspectById(prospects, openParam);
+      if (target) {
+        openProspectDetails(target);
+      }
+      nextParams.delete('open');
+      shouldReplace = true;
+    }
+
+    if (shouldReplace) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [loading, openModal, openProspectDetails, prospects, searchParams, setSearchParams]);
 
   const onSubmit = async (data: ProspectInput) => {
     if (!user) return;
@@ -142,25 +343,48 @@ export default function ProspectsPage() {
       setSaving(true);
       const parsed = prospectSchema.parse(data);
 
+      const isWon = isWonProspectStatus(parsed.status);
+      const hasRealizedGate = Number(parsed.realizadoValor || 0) > 0 && Boolean(parsed.realizadoData);
+
+      if (isWon && !hasRealizedGate) {
+        toastError('Para status ganho, informe valor realizado > 0 e data de realizado.');
+        return;
+      }
+
+      const result = await saveProspectWithConversion({
+        prospectId: selectedProspect?.id,
+        data: parsed,
+      }, {
+        ownerUid: user.uid,
+      });
+
       if (selectedProspect?.id) {
-        const updated = await prospectRepository.update(selectedProspect.id, parsed, user.uid);
-        if (updated) {
-          setProspects((prev) =>
-            prev.map((p) => (p.id === selectedProspect.id ? updated : p))
-          );
-          toast.success('Prospect atualizado com sucesso!');
+        setProspects((prev) => prev.map((item) => (item.id === selectedProspect.id ? result.prospect : item)));
+        if (result.prospect.converted) {
+          toastSuccess('Prospect atualizado e conversão sincronizada com cliente/metas.');
+        } else {
+          toastSuccess('Prospect atualizado com sucesso!');
         }
       } else {
-        const created = await prospectRepository.create(parsed, user.uid);
-        setProspects((prev) => [...prev, created]);
-        toast.success('Prospect criado com sucesso!');
+        setProspects((prev) => [...prev, result.prospect]);
+        if (result.prospect.converted) {
+          toastSuccess('Prospect criado e convertido em cliente.');
+        } else {
+          toastSuccess('Prospect criado com sucesso!');
+        }
       }
+
+      emitDataInvalidation(['prospects', 'clients', 'captacao', 'metas', 'dashboard']);
 
       setModalOpen(false);
       reset();
     } catch (error) {
       console.error('Erro ao salvar prospect:', error);
-      toast.error('Erro ao salvar prospect');
+      if (error instanceof Error && error.message === 'PROSPECT_CONVERSION_REQUIREMENTS') {
+        toastError('Para converter em cliente, status ganho exige valor realizado > 0 e data preenchida.');
+      } else {
+        toastError('Erro ao salvar prospect');
+      }
     } finally {
       setSaving(false);
     }
@@ -173,28 +397,15 @@ export default function ProspectsPage() {
       setSaving(true);
       await prospectRepository.delete(selectedProspect.id, user.uid);
       setProspects((prev) => prev.filter((p) => p.id !== selectedProspect.id));
-      toast.success('Prospect excluído com sucesso!');
+      toastSuccess('Prospect excluído com sucesso!');
+      emitDataInvalidation(['prospects', 'clients', 'captacao', 'metas', 'dashboard']);
       setDeleteModalOpen(false);
       setSelectedProspect(null);
     } catch (error) {
       console.error('Erro ao excluir prospect:', error);
-      toast.error('Erro ao excluir prospect');
+      toastError('Erro ao excluir prospect');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const getStatusVariant = (status: string): 'success' | 'warning' | 'danger' | 'default' => {
-    switch (status) {
-      case 'ganho':
-        return 'success';
-      case 'perdido':
-        return 'danger';
-      case 'proposta':
-      case 'qualificado':
-        return 'warning';
-      default:
-        return 'default';
     }
   };
 
@@ -205,8 +416,10 @@ export default function ProspectsPage() {
         header: 'Nome',
         cell: (info) => (
           <button
-            onClick={() => { setSelectedProspect(info.row.original); setDetalhesModalOpen(true); }}
-            className="font-medium text-purple-600 hover:text-purple-800 hover:underline text-left"
+            type="button"
+            onClick={() => openProspectDetails(info.row.original)}
+            className="font-medium hover:underline text-left focus-gold rounded-sm"
+            style={{ color: 'var(--color-gold)' }}
           >
             {info.getValue() as string}
           </button>
@@ -217,43 +430,54 @@ export default function ProspectsPage() {
         header: 'Origem',
         cell: (info) => {
           const origem = info.getValue() as string;
-          const option = origemOptions.find((o) => o.value === origem);
-          const isLiberta = origem === 'liberta';
-          return <span className={isLiberta ? 'px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium' : ''}>{option?.label || origem || '-'}</span>;
+          return (
+            <Badge variant={origem === 'liberta' ? 'success' : 'neutral'}>
+              {getOrigemLabel(origem)}
+            </Badge>
+          );
         },
       },
       {
         accessorKey: 'proximoContato',
-        header: 'Próx. Contato',
+        header: 'Próx. contato',
         cell: (info) => {
-          const data = info.getValue() as string;
-          if (!data) return <span className="text-gray-400">—</span>;
-          const hoje = new Date().toISOString().split('T')[0];
-          const atrasado = data < hoje;
-          const ehHoje = data === hoje;
-          const hora = info.row.original.proximoContatoHora || '';
+          const prospect = info.row.original;
+          const urgency = getContactUrgency(prospect, new Date());
+          const dueDate = normalizeDate(prospect.proximoContato);
+          if (!dueDate) {
+            return <span style={{ color: 'var(--color-text-muted)' }}>Sem próximo passo</span>;
+          }
+          const hourText = prospect.proximoContatoHora ? ` ${prospect.proximoContatoHora}` : '';
+
           return (
-            <span className={`flex items-center text-sm ${atrasado ? 'text-red-600 font-semibold' : ehHoje ? 'text-orange-600 font-semibold' : ''}`}>
-              {atrasado && <AlertTriangle className="w-4 h-4 mr-1" />}
-              {new Date(data + 'T00:00:00').toLocaleDateString('pt-BR')} {hora && `${hora}`}
+            <span
+              className="flex items-center text-sm"
+              style={{
+                color:
+                  urgency === 'overdue'
+                    ? 'var(--color-danger)'
+                    : urgency === 'today'
+                      ? 'var(--color-warning)'
+                      : 'var(--color-text-secondary)',
+              }}
+            >
+              {urgency === 'overdue' && <AlertTriangle className="w-4 h-4 mr-1" />}
+              {dueDate.toLocaleDateString('pt-BR')}{hourText}
             </span>
           );
         },
       },
       {
         accessorKey: 'potencial',
-        header: 'Pipe Atual',
+        header: 'Pipe atual',
         cell: (info) => {
-          const potencial = info.getValue() as number;
-          const realizado = info.row.original.realizadoValor || 0;
-          const pipeAtual = Math.max(0, potencial - realizado);
-          const tipo = info.row.original.potencialTipo || 'captacao_liquida';
-          const label = tipo === 'transferencia_xp' ? 'TXP' : 'CL';
-          const excedeu = realizado > potencial;
+          const prospect = info.row.original;
+          const pipeAtual = getPipeAtualValue(prospect);
+          const label = getTipoLabel(prospect.potencialTipo);
+          const exceeded = Number(prospect.realizadoValor ?? 0) > Number(prospect.potencial ?? 0);
           return (
-            <span className={excedeu ? 'text-orange-600' : ''}>
-              <CurrencyCell value={pipeAtual} /> <span className="text-xs text-gray-500">({label})</span>
-              {excedeu && <span className="ml-1 text-xs bg-orange-100 text-orange-700 px-1 rounded">&gt;100%</span>}
+            <span style={exceeded ? { color: 'var(--color-warning)' } : undefined}>
+              <CurrencyCell value={pipeAtual} /> <span style={{ color: 'var(--color-text-muted)' }}>({label})</span>
             </span>
           );
         },
@@ -262,11 +486,14 @@ export default function ProspectsPage() {
         accessorKey: 'realizadoValor',
         header: 'Realizado',
         cell: (info) => {
-          const val = info.getValue() as number;
-          if (!val) return <span className="text-gray-400">—</span>;
-          const tipo = info.row.original.realizadoTipo || 'captacao_liquida';
-          const label = tipo === 'transferencia_xp' ? 'TXP' : 'CL';
-          return <span className="text-green-600"><CurrencyCell value={val} /> <span className="text-xs">({label})</span></span>;
+          const value = info.getValue() as number;
+          if (!value) return <span style={{ color: 'var(--color-text-muted)' }}>-</span>;
+          const label = getTipoLabel(info.row.original.realizadoTipo);
+          return (
+            <span style={{ color: 'var(--color-success)' }}>
+              <CurrencyCell value={value} /> <span>({label})</span>
+            </span>
+          );
         },
       },
       {
@@ -274,8 +501,7 @@ export default function ProspectsPage() {
         header: 'Status',
         cell: (info) => {
           const status = info.getValue() as string;
-          const option = statusOptions.find((s) => s.value === status);
-          return <StatusBadge status={option?.label || status} variant={getStatusVariant(status)} />;
+          return <StatusBadge status={getStatusLabel(status)} variant={getStatusVariant(status)} />;
         },
       },
       {
@@ -292,104 +518,292 @@ export default function ProspectsPage() {
         ),
       },
     ],
-    []
+    [openModal, openProspectDetails]
   );
 
-  const totais = useMemo(() => {
-    const ativos = prospects.filter((p) => !['ganho', 'perdido'].includes(p.status));
-    // Pipe Atual = max(0, potencial - realizado) -- pipe diminui com realizado
-    const pipeAtualCL = ativos
-      .filter((p) => p.potencialTipo !== 'transferencia_xp')
-      .reduce((sum, p) => sum + Math.max(0, (p.potencial || 0) - (p.realizadoValor || 0)), 0);
-    const pipeAtualTXP = ativos
-      .filter((p) => p.potencialTipo === 'transferencia_xp')
-      .reduce((sum, p) => sum + Math.max(0, (p.potencial || 0) - (p.realizadoValor || 0)), 0);
-    // Realizado total (todos os prospects, não só ativos)
-    const realizadoCL = prospects.filter((p) => p.realizadoTipo !== 'transferencia_xp').reduce((sum, p) => sum + (p.realizadoValor || 0), 0);
-    const realizadoTXP = prospects.filter((p) => p.realizadoTipo === 'transferencia_xp').reduce((sum, p) => sum + (p.realizadoValor || 0), 0);
-    return {
-      total: prospects.length,
-      ativos: ativos.length,
-      pipeAtualCL,
-      pipeAtualTXP,
-      pipeAtualTotal: pipeAtualCL + pipeAtualTXP,
-      realizadoCL,
-      realizadoTXP,
-      realizadoTotal: realizadoCL + realizadoTXP,
-      lembretes: lembretes.length,
-    };
-  }, [prospects, lembretes]);
+  const filteredProspects = useMemo(() => {
+    const today = new Date();
+
+    return prospects.filter((prospect) => {
+      const normalizedStatus = normalizeProspectStatus(prospect.status);
+
+      if (statusFilter === 'active' && !isProspectAtivo(normalizedStatus)) return false;
+      if (statusFilter === 'ganho' && normalizedStatus !== 'ganho') return false;
+      if (statusFilter === 'perdido' && normalizedStatus !== 'perdido') return false;
+
+      const urgency = getContactUrgency(prospect, today);
+      if (contactFilter === 'overdue' && urgency !== 'overdue') return false;
+      if (contactFilter === 'today' && urgency !== 'today') return false;
+      if (contactFilter === 'no_next_step' && urgency !== 'none') return false;
+
+      if (origemFilter !== 'all' && prospect.origem !== origemFilter) return false;
+
+      return matchesSearchTerm(prospect, searchTerm);
+    });
+  }, [contactFilter, origemFilter, prospects, searchTerm, statusFilter]);
+
+  const totalProspectsAtivos = useMemo(() => {
+    return prospects.filter((prospect) => isProspectAtivo(prospect.status)).length;
+  }, [prospects]);
+
+  const hasSearchFilter = searchTerm.trim().length > 0;
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== DEFAULT_STATUS_FILTER) count += 1;
+    if (contactFilter !== DEFAULT_CONTACT_FILTER) count += 1;
+    if (origemFilter !== DEFAULT_ORIGEM_FILTER) count += 1;
+    if (hasSearchFilter) count += 1;
+    return count;
+  }, [contactFilter, hasSearchFilter, origemFilter, statusFilter]);
+
+  const hasNonDefaultFilter = activeFilterCount > 0;
+
+  const lembretes = useMemo(() => {
+    const today = new Date();
+    return filteredProspects.filter((prospect) => {
+      const urgency = getContactUrgency(prospect, today);
+      return (urgency === 'overdue' || urgency === 'today') && isProspectAtivo(prospect.status);
+    });
+  }, [filteredProspects]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <PageSkeleton showKpis kpiCount={6} />;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Prospects</h1>
-          <p className="text-gray-600">Pipeline de potenciais clientes</p>
-        </div>
-        <button
-          onClick={() => openModal()}
-          className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Novo Prospect
-        </button>
-      </div>
+    <PageContainer variant="wide">
+      <PageHeader
+        title="Prospects"
+        subtitle="Pipeline de potenciais clientes"
+        actions={(
+          <Button
+            type="button"
+            onClick={() => openModal()}
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Novo Prospect
+          </Button>
+        )}
+        controls={(
+          <>
+            <SavedViewsControl
+              uid={user?.uid}
+              scope="prospects"
+              getSnapshot={getSavedViewSnapshot}
+              applySnapshot={applySavedViewSnapshot}
+              hasExplicitQuery={searchParams.toString().length > 0}
+            />
 
-      {/* Lembretes */}
-      {lembretes.length > 0 && (
-        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-          <div className="flex items-center text-orange-700 font-semibold mb-2"><Bell className="w-5 h-5 mr-2" />Contatos pendentes ({lembretes.length})</div>
-          <div className="flex flex-wrap gap-2">
-            {lembretes.slice(0, 5).map((p) => (
-              <button key={p.id} onClick={() => { setSelectedProspect(p); setDetalhesModalOpen(true); }} className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm hover:bg-orange-200">{p.nome}</button>
-            ))}
-            {lembretes.length > 5 && <span className="text-orange-600 text-sm">+{lembretes.length - 5} mais</span>}
-          </div>
+            <div className="w-full space-y-1 sm:min-w-[200px] sm:w-auto">
+              <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                Visualização
+              </span>
+              <SegmentedControl
+                options={viewModeOptions}
+                value={viewMode}
+                onChange={(value) => {
+                  if (isProspectViewMode(value)) {
+                    setViewMode(value);
+                  }
+                }}
+                size="sm"
+              />
+            </div>
+
+            <div className="w-full space-y-1 sm:min-w-[250px] sm:w-auto">
+              <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                Status
+              </span>
+              <SegmentedControl
+                options={statusFilterOptions}
+                value={statusFilter}
+                onChange={(value) => {
+                  if (isProspectStatusFilter(value)) {
+                    setStatusFilter(value);
+                  }
+                }}
+                size="sm"
+              />
+            </div>
+
+            <div className="w-full space-y-1 sm:min-w-[280px] sm:w-auto">
+              <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                Pendência de contato
+              </span>
+              <SegmentedControl
+                options={contactFilterOptions}
+                value={contactFilter}
+                onChange={(value) => {
+                  if (isProspectContactFilter(value)) {
+                    setContactFilter(value);
+                  }
+                }}
+                size="sm"
+              />
+            </div>
+
+            <div className="w-full sm:min-w-[180px] sm:w-auto">
+              <label className="mb-1 block text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                Origem
+              </label>
+              <select
+                value={origemFilter}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (isProspectOrigemFilter(value)) {
+                    setOrigemFilter(value);
+                  }
+                }}
+                className="w-full rounded-md px-3 py-2 text-sm"
+                style={{
+                  backgroundColor: 'var(--color-surface-2)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text)',
+                }}
+              >
+                <option value="all">Todas</option>
+                {PROSPECT_ORIGEM_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {viewMode === 'cards' && (
+              <div className="w-full sm:min-w-[260px] sm:max-w-[360px]">
+                <Input
+                  label="Buscar prospect"
+                  placeholder="Nome, origem, status..."
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+              </div>
+            )}
+          </>
+        )}
+      />
+
+      {hasNonDefaultFilter && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+            Filtros ativos
+          </span>
+
+          {statusFilter !== DEFAULT_STATUS_FILTER && (
+            <Chip
+              variant="info"
+              onRemove={() => setStatusFilter(DEFAULT_STATUS_FILTER)}
+              removeAriaLabel="Remover filtro Status"
+            >
+              Status: {statusFilterLabels[statusFilter]}
+            </Chip>
+          )}
+
+          {contactFilter !== DEFAULT_CONTACT_FILTER && (
+            <Chip
+              variant="warning"
+              onRemove={() => setContactFilter(DEFAULT_CONTACT_FILTER)}
+              removeAriaLabel="Remover filtro Pendência de contato"
+            >
+              Pendência: {contactFilterLabels[contactFilter]}
+            </Chip>
+          )}
+
+          {origemFilter !== DEFAULT_ORIGEM_FILTER && (
+            <Chip
+              variant="neutral"
+              onRemove={() => setOrigemFilter(DEFAULT_ORIGEM_FILTER)}
+              removeAriaLabel="Remover filtro Origem"
+            >
+              Origem: {getOrigemLabel(origemFilter)}
+            </Chip>
+          )}
+
+          {hasSearchFilter && (
+            <Chip
+              variant="neutral"
+              onRemove={() => setSearchTerm('')}
+              removeAriaLabel="Limpar busca"
+            >
+              Busca: {searchTerm.trim()}
+            </Chip>
+          )}
+
+          {activeFilterCount >= 2 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={clearProspectFilters}
+            >
+              Limpar tudo
+            </Button>
+          )}
         </div>
       )}
 
-      {/* KPIs - Pipe x Realizado */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Ativos</p>
-          <p className="text-2xl font-bold text-purple-600">{totais.ativos}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
-          <p className="text-sm text-gray-600">Pipe Atual</p>
-          <p className="text-2xl font-bold text-blue-600">{formatCurrency(totais.pipeAtualTotal)}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Pipe CL</p>
-          <p className="text-xl font-bold text-blue-500">{formatCurrency(totais.pipeAtualCL)}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Pipe TXP</p>
-          <p className="text-xl font-bold text-indigo-500">{formatCurrency(totais.pipeAtualTXP)}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Realizado CL</p>
-          <p className="text-xl font-bold text-green-600">{formatCurrency(totais.realizadoCL)}</p>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Realizado TXP</p>
-          <p className="text-xl font-bold text-teal-600">{formatCurrency(totais.realizadoTXP)}</p>
-        </div>
-      </div>
-
-      <DataTable
-        data={prospects}
-        columns={columns}
-        searchPlaceholder="Buscar prospects..."
+      <ProspectKpiSummary
+        prospects={filteredProspects}
+        reminders={lembretes}
+        onOpenProspect={(prospect) => openProspectDetails(prospect)}
       />
+
+      <SectionCard
+        title={viewMode === 'cards' ? 'Board de Prospects' : 'Tabela de Prospects'}
+        subtitle={
+          viewMode === 'cards'
+            ? 'Visão por status com priorização por urgência de contato'
+            : `${filteredProspects.length} prospect(s) após filtros`
+        }
+      >
+        {filteredProspects.length === 0 ? (
+          totalProspectsAtivos === 0
+            && statusFilter === DEFAULT_STATUS_FILTER
+            && contactFilter === DEFAULT_CONTACT_FILTER
+            && origemFilter === DEFAULT_ORIGEM_FILTER
+            && !hasSearchFilter ? (
+              <EmptyState
+                title="Nenhum prospect no pipeline"
+                description="Adicione prospects para começar o acompanhamento comercial."
+                action={{
+                  label: 'Novo prospect',
+                  onClick: () => openModal(),
+                }}
+              />
+            ) : (
+              <EmptyState
+                title="Nenhum prospect corresponde aos filtros"
+                description="Ajuste os filtros ativos ou limpe os critérios para ampliar os resultados."
+                action={{
+                  label: 'Limpar filtros',
+                  onClick: clearProspectFilters,
+                }}
+              />
+            )
+        ) : viewMode === 'cards' ? (
+          <ProspectBoardView
+            prospects={filteredProspects}
+            interacoesByProspect={interacoesByProspect}
+            onOpenDetails={(prospect) => openProspectDetails(prospect)}
+            onEdit={openModal}
+            onDelete={(prospect) => {
+              setSelectedProspect(prospect);
+              setDeleteModalOpen(true);
+            }}
+            onQuickAddInteracao={(prospect) => openProspectDetails(prospect, true)}
+          />
+        ) : (
+          <DataTable
+            data={filteredProspects}
+            columns={columns}
+            searchPlaceholder="Buscar prospects..."
+            searchValue={searchTerm}
+            onSearchChange={setSearchTerm}
+            sortingState={tableSorting}
+            onSortingChange={setTableSorting}
+          />
+        )}
+      </SectionCard>
 
       <Modal
         isOpen={modalOpen}
@@ -422,13 +836,13 @@ export default function ProspectsPage() {
             />
             <Select
               label="Origem"
-              options={origemOptions}
+              options={PROSPECT_ORIGEM_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
               {...register('origem')}
               error={errors.origem?.message}
             />
             <Select
               label="Status"
-              options={statusOptions}
+              options={PROSPECT_STATUS_COLUMNS.map((option) => ({ value: option.value, label: option.label }))}
               {...register('status')}
               error={errors.status?.message}
             />
@@ -441,7 +855,7 @@ export default function ProspectsPage() {
             />
             <Select
               label="Tipo Potencial"
-              options={tipoOptions}
+              options={PROSPECT_TIPO_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
               {...register('potencialTipo')}
             />
             <Input
@@ -459,7 +873,7 @@ export default function ProspectsPage() {
               error={errors.dataContato?.message}
             />
             <Input
-              label="Próximo Contato"
+              label="Próximo contato"
               type="date"
               {...register('proximoContato')}
               error={errors.proximoContato?.message}
@@ -472,8 +886,8 @@ export default function ProspectsPage() {
           </div>
 
           {/* Realizado */}
-          <div className="border-t pt-4 mt-4">
-            <h4 className="font-medium text-gray-700 mb-3">Realizado (quando convertido)</h4>
+          <div className="border-t pt-4 mt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+            <h4 className="font-medium mb-3" style={{ color: 'var(--color-text-muted)' }}>Realizado (quando convertido)</h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input
                 label="Valor Realizado"
@@ -483,7 +897,7 @@ export default function ProspectsPage() {
               />
               <Select
                 label="Tipo Realizado"
-                options={tipoOptions}
+                options={PROSPECT_TIPO_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
                 {...register('realizadoTipo')}
               />
               <Input
@@ -492,6 +906,16 @@ export default function ProspectsPage() {
                 {...register('realizadoData')}
               />
             </div>
+            {isWonSelected && !(Number(realizadoValorWatch || 0) > 0 && Boolean(realizadoDataWatch)) && (
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-danger)' }}>
+                Status ganho exige valor realizado maior que zero e data de realizado.
+              </p>
+            )}
+            {!isWonSelected && (Number(realizadoValorWatch || 0) > 0 || Boolean(realizadoDataWatch)) && (
+              <p className="mt-2 text-sm" style={{ color: 'var(--color-warning)' }}>
+                Defina status como ganho para converter este prospect em cliente.
+              </p>
+            )}
           </div>
 
           <TextArea
@@ -500,29 +924,25 @@ export default function ProspectsPage() {
             error={errors.observacoes?.message}
           />
 
-          <div className="flex justify-end space-x-3 pt-4">
-            <button
-              type="button"
-              onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-            >
+          <div className="flex justify-end gap-3 pt-4">
+            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
               Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-purple-600 rounded-md hover:bg-purple-700 disabled:opacity-50"
-            >
-              {saving ? 'Salvando...' : selectedProspect ? 'Atualizar' : 'Criar'}
-            </button>
+            </Button>
+            <Button type="submit" loading={saving}>
+              {selectedProspect ? 'Atualizar' : 'Criar'}
+            </Button>
           </div>
         </form>
       </Modal>
 
-      <ConfirmDelete
+      <ConfirmDialog
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={handleDelete}
+        title="Excluir Prospect"
+        message="Tem certeza que deseja excluir este prospect? Esta ação não pode ser desfeita."
+        confirmText="Excluir"
+        variant="danger"
         loading={saving}
       />
 
@@ -533,6 +953,7 @@ export default function ProspectsPage() {
           onClose={() => setDetalhesModalOpen(false)}
           prospect={selectedProspect}
           interacoes={interacoes.filter((i) => i.prospectId === selectedProspect.id)}
+          focusAddInteractionToken={focusInteractionToken}
           onInteracaoSaved={(i) => setInteracoes((prev) => {
             const idx = prev.findIndex((x) => x.id === i.id);
             return idx >= 0 ? prev.map((x) => (x.id === i.id ? i : x)) : [...prev, i];
@@ -540,7 +961,7 @@ export default function ProspectsPage() {
           onInteracaoDeleted={(id) => setInteracoes((prev) => prev.filter((x) => x.id !== id))}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -550,14 +971,36 @@ interface DetalhesModalProps {
   onClose: () => void;
   prospect: Prospect;
   interacoes: ProspectInteracao[];
+  focusAddInteractionToken: number;
   onInteracaoSaved: (i: ProspectInteracao) => void;
   onInteracaoDeleted: (id: string) => void;
 }
 
-function ProspectDetalhesModal({ isOpen, onClose, prospect, interacoes, onInteracaoSaved, onInteracaoDeleted }: DetalhesModalProps) {
+function ProspectDetalhesModal({
+  isOpen,
+  onClose,
+  prospect,
+  interacoes,
+  focusAddInteractionToken,
+  onInteracaoSaved,
+  onInteracaoDeleted,
+}: DetalhesModalProps) {
   const { user } = useAuth();
   const [novaInteracao, setNovaInteracao] = useState({ tipo: 'ligacao', data: '', resumo: '' });
   const [saving, setSaving] = useState(false);
+  const resumoInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (focusAddInteractionToken === 0) return;
+
+    const todayDate = new Date().toISOString().split('T')[0];
+    setNovaInteracao((current) => ({ ...current, data: todayDate }));
+
+    requestAnimationFrame(() => {
+      resumoInputRef.current?.focus();
+    });
+  }, [focusAddInteractionToken, isOpen]);
 
   const handleAddInteracao = async () => {
     if (!user || !prospect.id || !novaInteracao.data) return;
@@ -571,9 +1014,9 @@ function ProspectDetalhesModal({ isOpen, onClose, prospect, interacoes, onIntera
       }, user.uid);
       onInteracaoSaved(created);
       setNovaInteracao({ tipo: 'ligacao', data: '', resumo: '' });
-      toast.success('Interação adicionada!');
-    } catch (error) {
-      toast.error('Erro ao adicionar interação');
+      toastSuccess('interação adicionada!');
+    } catch {
+      toastError('Erro ao adicionar interação');
     } finally {
       setSaving(false);
     }
@@ -584,70 +1027,160 @@ function ProspectDetalhesModal({ isOpen, onClose, prospect, interacoes, onIntera
     try {
       await prospectInteracaoRepository.delete(id, user.uid);
       onInteracaoDeleted(id);
-      toast.success('Interação excluída!');
-    } catch (error) {
-      toast.error('Erro ao excluir');
+      toastSuccess('interação excluída!');
+    } catch {
+      toastError('Erro ao excluir interação');
     }
   };
 
-  const sortedInteracoes = [...interacoes].sort((a, b) => b.data.localeCompare(a.data));
+  const sortedInteracoes = [...interacoes].sort((a, b) => {
+    const byDate = (normalizeDate(b.data)?.getTime() ?? 0) - (normalizeDate(a.data)?.getTime() ?? 0);
+    if (byDate !== 0) return byDate;
+    return (normalizeDate(b.updatedAt)?.getTime() ?? 0) - (normalizeDate(a.updatedAt)?.getTime() ?? 0);
+  });
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Detalhes: ${prospect.nome}`} size="lg">
       <div className="space-y-6">
-        {/* Info */}
-        <div className="bg-gray-50 p-4 rounded-lg grid grid-cols-2 gap-3 text-sm">
-          <div><span className="text-gray-500">Origem:</span> <span className="font-medium">{origemOptions.find((o) => o.value === prospect.origem)?.label || prospect.origem || '—'}</span></div>
-          <div><span className="text-gray-500">Status:</span> <span className="font-medium">{statusOptions.find((s) => s.value === prospect.status)?.label || prospect.status}</span></div>
-          <div><span className="text-gray-500">Potencial:</span> <span className="font-medium">{formatCurrency(prospect.potencial || 0)} ({prospect.potencialTipo === 'transferencia_xp' ? 'TXP' : 'CL'})</span></div>
-          <div><span className="text-gray-500">Realizado:</span> <span className="font-medium text-green-600">{formatCurrency(prospect.realizadoValor || 0)}</span></div>
-          <div><span className="text-gray-500">Próx. Contato:</span> <span className="font-medium">{prospect.proximoContato ? new Date(prospect.proximoContato + 'T00:00:00').toLocaleDateString('pt-BR') : '—'} {prospect.proximoContatoHora || ''}</span></div>
-          <div><span className="text-gray-500">Telefone:</span> <span className="font-medium">{prospect.telefone || '—'}</span></div>
-        </div>
-
-        {/* Nova Interação */}
-        <div className="border-t pt-4">
-          <h4 className="font-semibold text-gray-900 mb-3">Adicionar Interação</h4>
-          <div className="flex flex-wrap gap-2 items-end">
-            <select value={novaInteracao.tipo} onChange={(e) => setNovaInteracao({ ...novaInteracao, tipo: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
-              {interacaoTipoOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <input type="date" value={novaInteracao.data} onChange={(e) => setNovaInteracao({ ...novaInteracao, data: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-md text-sm" />
-            <input type="text" placeholder="Resumo" value={novaInteracao.resumo} onChange={(e) => setNovaInteracao({ ...novaInteracao, resumo: e.target.value })} className="flex-1 min-w-[150px] px-3 py-2 border border-gray-300 rounded-md text-sm" />
-            <button onClick={handleAddInteracao} disabled={saving || !novaInteracao.data} className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 text-sm">
-              {saving ? 'Salvando...' : 'Adicionar'}
-            </button>
+        <div className="grid grid-cols-1 gap-3 rounded-lg p-4 text-sm md:grid-cols-2" style={{ backgroundColor: 'var(--color-surface-2)' }}>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Origem:</span>{' '}
+            <span className="font-medium" style={{ color: 'var(--color-text)' }}>{getOrigemLabel(prospect.origem)}</span>
+          </div>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Status:</span>{' '}
+            <Badge variant={normalizeProspectStatus(prospect.status) === 'ganho' ? 'success' : normalizeProspectStatus(prospect.status) === 'perdido' ? 'danger' : 'neutral'}>
+              {getStatusLabel(prospect.status)}
+            </Badge>
+          </div>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Potencial:</span>{' '}
+            <span className="font-medium" style={{ color: 'var(--color-text)' }}>
+              {formatCurrency(prospect.potencial || 0)} ({getTipoLabel(prospect.potencialTipo)})
+            </span>
+          </div>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Pipe atual:</span>{' '}
+            <span className="font-medium" style={{ color: 'var(--color-info)' }}>
+              {formatCurrency(getPipeAtualValue(prospect))}
+            </span>
+          </div>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Realizado:</span>{' '}
+            <span className="font-medium" style={{ color: 'var(--color-success)' }}>
+              {formatCurrency(prospect.realizadoValor || 0)} ({getTipoLabel(prospect.realizadoTipo)})
+            </span>
+          </div>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Próx. contato:</span>{' '}
+            <span className="font-medium" style={{ color: 'var(--color-text)' }}>
+              {prospect.proximoContato
+                ? `${new Date(`${prospect.proximoContato}T00:00:00`).toLocaleDateString('pt-BR')} ${prospect.proximoContatoHora || ''}`
+                : 'Sem próximo passo'}
+            </span>
+          </div>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Telefone:</span>{' '}
+            <span className="font-medium" style={{ color: 'var(--color-text)' }}>{prospect.telefone || '-'}</span>
+          </div>
+          <div>
+            <span style={{ color: 'var(--color-text-muted)' }}>Convertido:</span>{' '}
+            <span className="font-medium" style={{ color: 'var(--color-text)' }}>{prospect.converted ? 'Sim' : 'Não'}</span>
           </div>
         </div>
 
-        {/* Timeline de Interações */}
-        <div className="border-t pt-4">
-          <h4 className="font-semibold text-gray-900 mb-3">Histórico de Contatos ({interacoes.length})</h4>
+        <div className="space-y-3 border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+          <h4 className="font-semibold" style={{ color: 'var(--color-text)' }}>Adicionar interação</h4>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Select
+              label="Tipo"
+              options={interacaoTipoOptions}
+              value={novaInteracao.tipo}
+              onChange={(event) => setNovaInteracao((current) => ({ ...current, tipo: event.target.value }))}
+            />
+            <Input
+              label="Data *"
+              type="date"
+              value={novaInteracao.data}
+              onChange={(event) => setNovaInteracao((current) => ({ ...current, data: event.target.value }))}
+            />
+            <Input
+              ref={resumoInputRef}
+              label="Resumo"
+              value={novaInteracao.resumo}
+              onChange={(event) => setNovaInteracao((current) => ({ ...current, resumo: event.target.value }))}
+              placeholder="Resumo da interação"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleAddInteracao}
+              loading={saving}
+              disabled={!novaInteracao.data}
+            >
+              Adicionar interação
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-3 border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+          <h4 className="font-semibold" style={{ color: 'var(--color-text)' }}>Histórico de contatos ({interacoes.length})</h4>
           {sortedInteracoes.length === 0 ? (
-            <p className="text-gray-500 text-sm">Nenhuma interação registrada.</p>
+            <InlineEmpty message="Nenhuma interação registrada." />
           ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {sortedInteracoes.map((i) => (
-                <div key={i.id} className="flex items-start gap-3 bg-gray-50 p-3 rounded-lg group">
-                  <div className="text-purple-600">{interacaoIcons[i.tipo] || <Bell className="w-4 h-4" />}</div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{interacaoTipoOptions.find((o) => o.value === i.tipo)?.label || i.tipo}</span>
-                      <span className="text-xs text-gray-500">{new Date(i.data + 'T00:00:00').toLocaleDateString('pt-BR')}</span>
-                    </div>
-                    {i.resumo && <p className="text-sm text-gray-600 mt-1">{i.resumo}</p>}
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {sortedInteracoes.map((interacao) => (
+                <div
+                  key={interacao.id}
+                  className="flex items-start gap-3 rounded-lg p-3"
+                  style={{ backgroundColor: 'var(--color-surface-2)' }}
+                >
+                  <div style={{ color: 'var(--color-gold)' }}>
+                    {interacaoIcons[interacao.tipo] || <Bell className="w-4 h-4" />}
                   </div>
-                  <button onClick={() => i.id && handleDeleteInteracao(i.id)} className="text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 text-xs">Excluir</button>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                        {interacaoTipoOptions.find((option) => option.value === interacao.tipo)?.label || interacao.tipo}
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                        {normalizeDate(interacao.data)?.toLocaleDateString('pt-BR') || '-'}
+                      </span>
+                    </div>
+                    {interacao.resumo && (
+                      <p className="mt-1 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                        {interacao.resumo}
+                      </p>
+                    )}
+                  </div>
+                  {interacao.id && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="danger"
+                      onClick={() => handleDeleteInteracao(interacao.id as string)}
+                    >
+                      Excluir
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
           )}
         </div>
 
-        <div className="flex justify-end pt-4 border-t">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">Fechar</button>
+        <div className="flex justify-end border-t pt-4" style={{ borderColor: 'var(--color-border-subtle)' }}>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Fechar
+          </Button>
         </div>
       </div>
     </Modal>
   );
 }
+
+
+
+

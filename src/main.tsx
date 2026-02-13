@@ -12,22 +12,22 @@ createRoot(document.getElementById('root')!).render(
       toastOptions={{
         duration: 3000,
         style: {
-          background: '#313A48', // --color-surface-2
-          color: '#E4E8EF',       // --color-text
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          background: 'var(--color-surface-2)',
+          color: 'var(--color-text)',
+          border: '1px solid var(--color-border)',
         },
         success: {
           duration: 3000,
           iconTheme: {
-            primary: '#22C55E',   // --color-success
-            secondary: '#1C2128', // --color-bg
+            primary: 'var(--color-success)',
+            secondary: 'var(--color-bg)',
           },
         },
         error: {
           duration: 4000,
           iconTheme: {
-            primary: '#EF4444',   // --color-danger
-            secondary: '#1C2128', // --color-bg
+            primary: 'var(--color-danger)',
+            secondary: 'var(--color-bg)'
           },
         },
       }}

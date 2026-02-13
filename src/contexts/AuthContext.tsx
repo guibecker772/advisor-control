@@ -1,70 +1,93 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  type User,
+} from 'firebase/auth';
 
-// ============================================
-// MODO DE TESTE - Firebase desativado
-// Para ativar o Firebase, comente o bloco abaixo
-// e descomente o bloco de produção
-// ============================================
-
-// Usuário mockado para testes
-const MOCK_USER = {
-  uid: 'test-user-123',
-  email: 'teste@teste.com',
-  displayName: 'Usuário Teste',
-  emailVerified: true,
-  isAnonymous: false,
-  metadata: {},
-  providerData: [],
-  refreshToken: '',
-  tenantId: null,
-  delete: async () => {},
-  getIdToken: async () => 'mock-token',
-  getIdTokenResult: async () => ({} as any),
-  reload: async () => {},
-  toJSON: () => ({}),
-  phoneNumber: null,
-  photoURL: null,
-  providerId: 'mock',
-} as any;
+import { runEncodingRepairMigration } from '../services/encodingRepairMigration';
+import { runOfferBackfillMigration } from '../services/offerBackfillMigration';
+import { auth, firebaseInit, googleProvider } from '../services/firebase';
 
 interface AuthContextType {
-  user: any | null;
+  user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  loginGoogle: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const migrationUidRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // Modo de teste: auto-login com usuário mockado
-    console.log('🔓 Modo de teste ativado - Login automático');
-    setUser(MOCK_USER);
-    setLoading(false);
+    if (!auth) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser ?? null);
+      setLoading(false);
+    });
+
+    return unsubscribe;
   }, []);
 
-  const login = async (email: string, _password: string) => {
-    console.log('🔓 Login mockado:', email);
-    setUser(MOCK_USER);
+  useEffect(() => {
+    if (!user?.uid) {
+      migrationUidRef.current = null;
+      return;
+    }
+
+    if (migrationUidRef.current === user.uid) return;
+    migrationUidRef.current = user.uid;
+
+    const runMigrations = async () => {
+      try {
+        await runEncodingRepairMigration(user.uid);
+        await runOfferBackfillMigration(user.uid);
+      } catch (error) {
+        console.error('Erro ao executar migrations pos-login:', error);
+      }
+    };
+
+    void runMigrations();
+  }, [user?.uid]);
+
+  const login = async (email: string, password: string) => {
+    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+    await signInWithEmailAndPassword(auth, email, password);
   };
 
-  const register = async (email: string, _password: string) => {
-    console.log('🔓 Registro mockado:', email);
-    setUser(MOCK_USER);
+  const register = async (email: string, password: string) => {
+    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+    await createUserWithEmailAndPassword(auth, email, password);
   };
 
   const logout = async () => {
-    console.log('🔓 Logout mockado');
-    setUser(null);
+    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+    await signOut(auth);
+  };
+
+  const loginGoogle = async () => {
+    if (!auth || !googleProvider) {
+      throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+    }
+    await signInWithPopup(auth, googleProvider);
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, loginGoogle }}>
       {children}
     </AuthContext.Provider>
   );

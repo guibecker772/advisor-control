@@ -1,4 +1,4 @@
-import { Users, Calendar, Repeat, BarChart3 } from 'lucide-react';
+﻿import { Users, Calendar, Repeat, BarChart3, UserCheck } from 'lucide-react';
 import type { CalendarMetrics, MetricsPeriod } from '../../domain/types/calendar';
 import { MEETING_TYPE_COLORS } from '../../domain/types/calendar';
 
@@ -26,27 +26,29 @@ export default function MetricsCards({
 
   return (
     <div className="space-y-4">
-      {/* Seletor de Período */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
-          <BarChart3 className="w-5 h-5 text-gray-500" />
-          <span className="text-sm font-medium text-gray-700">Métricas:</span>
+          <BarChart3 className="w-5 h-5" style={{ color: 'var(--color-text-muted)' }} />
+          <span className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Métricas:</span>
         </div>
-        
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-          {periodOptions.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => onPeriodChange(opt.value)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                period === opt.value
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+
+        <div className="flex items-center gap-1 rounded-lg p-1" style={{ backgroundColor: 'var(--color-surface-2)' }}>
+          {periodOptions.map((opt) => {
+            const isActive = period === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onPeriodChange(opt.value)}
+                className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
+                style={{
+                  backgroundColor: isActive ? 'var(--color-gold-bg)' : 'transparent',
+                  color: isActive ? 'var(--color-gold)' : 'var(--color-text-secondary)',
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
 
         {period === 'custom' && (
@@ -54,97 +56,112 @@ export default function MetricsCards({
             <input
               type="date"
               value={customDateRange.start}
-              onChange={(e) => onCustomDateChange({ ...customDateRange, start: e.target.value })}
-              className="px-2 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500"
+              onChange={(event) => onCustomDateChange({ ...customDateRange, start: event.target.value })}
+              className="px-2 py-1 text-sm rounded-lg focus-gold"
+              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
             />
-            <span className="text-gray-400">até</span>
+            <span style={{ color: 'var(--color-text-muted)' }}>até</span>
             <input
               type="date"
               value={customDateRange.end}
-              onChange={(e) => onCustomDateChange({ ...customDateRange, end: e.target.value })}
-              className="px-2 py-1 text-sm border rounded-lg focus:ring-2 focus:ring-blue-500"
+              onChange={(event) => onCustomDateChange({ ...customDateRange, end: event.target.value })}
+              className="px-2 py-1 text-sm rounded-lg focus-gold"
+              style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
             />
           </div>
         )}
 
-        <span className="text-sm text-gray-500">
+        <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
           {metrics.period.label}
         </span>
       </div>
 
-      {/* Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* R1 */}
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="rounded-xl shadow-sm p-4" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
           <div className="flex items-center gap-3">
-            <div 
+            <div
               className="w-10 h-10 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: `${MEETING_TYPE_COLORS.R1}20` }}
             >
               <Users className="w-5 h-5" style={{ color: MEETING_TYPE_COLORS.R1 }} />
             </div>
             <div>
-              <p className="text-sm text-gray-500">R1</p>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>R1</p>
               <p className="text-2xl font-bold" style={{ color: MEETING_TYPE_COLORS.R1 }}>
                 {metrics.r1Count}
               </p>
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Primeiras reuniões</p>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>Primeiras reuniões</p>
         </div>
 
-        {/* R2 */}
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="rounded-xl shadow-sm p-4" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
           <div className="flex items-center gap-3">
-            <div 
+            <div
               className="w-10 h-10 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: `${MEETING_TYPE_COLORS.R2}20` }}
             >
               <Calendar className="w-5 h-5" style={{ color: MEETING_TYPE_COLORS.R2 }} />
             </div>
             <div>
-              <p className="text-sm text-gray-500">R2</p>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>R2</p>
               <p className="text-2xl font-bold" style={{ color: MEETING_TYPE_COLORS.R2 }}>
                 {metrics.r2Count}
               </p>
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Segundas reuniões</p>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>Segundas reuniões</p>
         </div>
 
-        {/* Áreas Cross */}
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="rounded-xl shadow-sm p-4" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
           <div className="flex items-center gap-3">
-            <div 
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: `${MEETING_TYPE_COLORS.acompanhamento}20` }}
+            >
+              <UserCheck className="w-5 h-5" style={{ color: MEETING_TYPE_COLORS.acompanhamento }} />
+            </div>
+            <div>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Acompanhamento</p>
+              <p className="text-2xl font-bold" style={{ color: MEETING_TYPE_COLORS.acompanhamento }}>
+                {metrics.acompanhamentoCount}
+              </p>
+            </div>
+          </div>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>Reuniões de acompanhamento</p>
+        </div>
+
+        <div className="rounded-xl shadow-sm p-4" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+          <div className="flex items-center gap-3">
+            <div
               className="w-10 h-10 rounded-lg flex items-center justify-center"
               style={{ backgroundColor: `${MEETING_TYPE_COLORS.areas_cross}20` }}
             >
               <Repeat className="w-5 h-5" style={{ color: MEETING_TYPE_COLORS.areas_cross }} />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Áreas Cross</p>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Áreas Cross</p>
               <p className="text-2xl font-bold" style={{ color: MEETING_TYPE_COLORS.areas_cross }}>
                 {metrics.areasCrossCount}
               </p>
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Reuniões de Cross</p>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>Reuniões de Cross</p>
         </div>
 
-        {/* Total */}
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="rounded-xl shadow-sm p-4" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center">
-              <BarChart3 className="w-5 h-5 text-gray-600" />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--color-surface-2)' }}>
+              <BarChart3 className="w-5 h-5" style={{ color: 'var(--color-text-secondary)' }} />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Total</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Total</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>
                 {metrics.totalMeetings}
               </p>
             </div>
           </div>
-          <p className="text-xs text-gray-400 mt-2">Todos os eventos</p>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>Todos os eventos</p>
         </div>
       </div>
     </div>

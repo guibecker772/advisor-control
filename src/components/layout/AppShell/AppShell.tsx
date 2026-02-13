@@ -1,12 +1,45 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
+import { resolveAccessCapabilities } from '../../../lib/access';
+import CommandPalette from '../../command/CommandPalette';
 import AppSidebar from './AppSidebar';
 import AppTopbar from './AppTopbar';
 
 export default function AppShell() {
   const { user, loading } = useAuth();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const commandTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('advisor_sidebar_collapsed_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  const access = resolveAccessCapabilities(user);
+
+  const handleToggleSidebar = () => {
+    const next = !sidebarCollapsed;
+    setSidebarCollapsed(next);
+    try {
+      localStorage.setItem('advisor_sidebar_collapsed_v1', String(next));
+    } catch { /* ignore */ }
+  };
+
+  useEffect(() => {
+    const handleCommandShortcut = (event: KeyboardEvent) => {
+      const isCommandK = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k';
+      if (!isCommandK) return;
+
+      event.preventDefault();
+      setCommandPaletteOpen(true);
+    };
+
+    window.addEventListener('keydown', handleCommandShortcut);
+    return () => window.removeEventListener('keydown', handleCommandShortcut);
+  }, []);
 
   // Loading state
   if (loading) {
@@ -39,11 +72,15 @@ export default function AppShell() {
       {/* Sidebar */}
       <AppSidebar 
         collapsed={sidebarCollapsed} 
-        onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} 
+        onToggle={handleToggleSidebar} 
       />
 
       {/* Topbar */}
-      <AppTopbar sidebarCollapsed={sidebarCollapsed} />
+      <AppTopbar
+        sidebarCollapsed={sidebarCollapsed}
+        onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+        commandTriggerRef={commandTriggerRef}
+      />
 
       {/* Main Content */}
       <main
@@ -56,6 +93,14 @@ export default function AppShell() {
           <Outlet />
         </div>
       </main>
+
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        triggerRef={commandTriggerRef}
+        uid={user?.uid}
+        access={access}
+      />
     </div>
   );
 }

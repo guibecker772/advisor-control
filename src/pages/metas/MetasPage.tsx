@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useForm } from 'react-hook-form';
+import { toastSuccess, toastError } from '../../lib/toast';
+import { PageHeader, PageSkeleton } from '../../components/ui';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
-  Goal,
   TrendingUp,
   ArrowDownUp,
   Repeat,
@@ -16,15 +17,15 @@ import {
   captacaoLancamentoRepository,
   offerReservationRepository,
   crossRepository,
-  prospectRepository,
 } from '../../services/repositories';
+import { subscribeDataInvalidation } from '../../lib/dataInvalidation';
 import {
   formatCurrency,
   calcularRealizadosMensal,
   calcularPercentAtingido,
   getNomeMes,
 } from '../../domain/calculations';
-import { monthlyGoalsSchema, type MonthlyGoals, type MonthlyGoalsInput, type Prospect, type CaptacaoLancamento } from '../../domain/types';
+import { monthlyGoalsSchema, type MonthlyGoals, type MonthlyGoalsInput } from '../../domain/types';
 
 export default function MetasPage() {
   const { user } = useAuth();
@@ -56,7 +57,7 @@ export default function MetasPage() {
   });
 
   // Carregar dados do mês
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!user) return;
     
     try {
@@ -87,58 +88,36 @@ export default function MetasPage() {
         });
       }
       
-      // Carregar dados para cálculo de realizados (incluindo prospects para derivar Prospect Auto)
+      // Carregar dados para cálculo de realizados
       // Cross usa getAll pois o filtro por mês/ano é feito em calcularCrossRealizadoMensal usando dataVenda
-      const [custodiaReceita, captacoes, ofertas, crosses, prospects] = await Promise.all([
+      const [custodiaReceita, captacoes, ofertas, crosses] = await Promise.all([
         custodiaReceitaRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
         captacaoLancamentoRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
         offerReservationRepository.getAll(user.uid),
         crossRepository.getAll(user.uid),
-        prospectRepository.getAll(user.uid),
       ]);
-      
-      // Derivar lançamentos de prospects realizados no mês (mesma lógica do CaptacaoPage)
-      const sourceRefsExistentes = new Set(captacoes.filter(l => l.sourceRef).map(l => l.sourceRef));
-      const derivadosProspects: CaptacaoLancamento[] = prospects
-        .filter((p: Prospect) => {
-          if (!p.realizadoData || !p.realizadoValor) return false;
-          const d = new Date(p.realizadoData + 'T00:00:00');
-          return d.getMonth() + 1 === mesFiltro && d.getFullYear() === anoFiltro;
-        })
-        .filter((p: Prospect) => !sourceRefsExistentes.has(`prospect:${p.id}`))
-        .map((p: Prospect): CaptacaoLancamento => ({
-          id: `derived-${p.id}`,
-          data: p.realizadoData!,
-          mes: mesFiltro,
-          ano: anoFiltro,
-          direcao: 'entrada',
-          tipo: p.realizadoTipo || 'captacao_liquida',
-          origem: 'prospect',
-          referenciaId: p.id,
-          referenciaNome: p.nome,
-          sourceRef: `prospect:${p.id}`,
-          valor: p.realizadoValor!,
-          observacoes: 'Derivado de Prospect',
-        }));
-      
-      // Combinar captações persistidas + derivadas de prospects
-      const captacoesConsolidadas = [...captacoes, ...derivadosProspects];
-      
-      // Calcular realizados (inclui Custódia + Ofertas + Cross + Prospects)
-      const realizadosMes = calcularRealizadosMensal(custodiaReceita, captacoesConsolidadas, mesFiltro, anoFiltro, ofertas, crosses);
+
+      // Calcular realizados (inclui Custódia + Ofertas + Cross + Captação persistida)
+      const realizadosMes = calcularRealizadosMensal(custodiaReceita, captacoes, mesFiltro, anoFiltro, ofertas, crosses);
       setRealizados(realizadosMes);
       
     } catch (error) {
       console.error('Erro ao carregar metas:', error);
+      toastError('Erro ao carregar metas');
     } finally {
       setLoading(false);
     }
-  };
+  }, [anoFiltro, mesFiltro, reset, user]);
 
   useEffect(() => {
-    loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, mesFiltro, anoFiltro]);
+    void loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    return subscribeDataInvalidation(['metas', 'captacao', 'prospects'], async () => {
+      await loadData();
+    });
+  }, [loadData]);
 
   // Valores do form para cálculo de percentuais
   const formValues = watch();
@@ -175,9 +154,11 @@ export default function MetasPage() {
       
       // Recarregar para garantir sincronização
       await loadData();
+      toastSuccess('Metas salvas com sucesso!');
       
     } catch (error) {
       console.error('Erro ao salvar metas:', error);
+      toastError('Erro ao salvar metas');
     } finally {
       setSaving(false);
     }
@@ -192,12 +173,12 @@ export default function MetasPage() {
 
   // Cor do progresso baseado no valor
   const getProgressColor = (percent: number | null): string => {
-    if (percent === null) return 'bg-gray-300';
-    if (percent >= 100) return 'bg-green-500';
-    if (percent >= 75) return 'bg-blue-500';
-    if (percent >= 50) return 'bg-yellow-500';
-    if (percent >= 0) return 'bg-orange-500';
-    return 'bg-red-500'; // Negativo
+    if (percent === null) return 'var(--color-text-muted)';
+    if (percent >= 100) return 'var(--color-success)';
+    if (percent >= 75) return 'var(--color-info)';
+    if (percent >= 50) return 'var(--color-warning)';
+    if (percent >= 0) return 'var(--color-gold)';
+    return 'var(--color-danger)';
   };
 
   // Largura da barra de progresso (clamp em 0-100 visual, mas mostra valor real)
@@ -208,200 +189,194 @@ export default function MetasPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <PageSkeleton showKpis kpiCount={3} />;
   }
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Goal className="w-7 h-7 text-blue-600" />
-            Metas
-          </h1>
-          <p className="text-gray-600">
-            Defina e acompanhe suas metas mensais
-          </p>
-        </div>
-        
-        {/* Filtro Mês/Ano */}
-        <div className="flex items-center gap-4">
-          <select
-            value={mesFiltro}
-            onChange={(e) => setMesFiltro(Number(e.target.value))}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <option key={m} value={m}>
-                {getNomeMes(m)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={anoFiltro}
-            onChange={(e) => setAnoFiltro(Number(e.target.value))}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
+      <PageHeader
+        title="Metas"
+        subtitle="Defina e acompanhe suas metas mensais"
+        actions={
           <button
             onClick={loadData}
-            className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+            className="p-2 rounded-lg transition-colors"
+            style={{ color: 'var(--color-text-muted)' }}
             title="Atualizar dados"
           >
             <RefreshCw className="w-5 h-5" />
           </button>
-        </div>
-      </div>
+        }
+        controls={
+          <>
+            <select
+              value={mesFiltro}
+              onChange={(e) => setMesFiltro(Number(e.target.value))}
+              className="px-3 py-2 rounded-lg text-sm focus-gold"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {getNomeMes(m)}
+                </option>
+              ))}
+            </select>
+            <select
+              value={anoFiltro}
+              onChange={(e) => setAnoFiltro(Number(e.target.value))}
+              className="px-3 py-2 rounded-lg text-sm focus-gold"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+            >
+              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+      />
 
       {/* Cards de Progresso */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Meta de Receita */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
+        <div className="rounded-xl p-6" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-md)' }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 bg-green-100 rounded-lg">
-              <TrendingUp className="w-6 h-6 text-green-600" />
+            <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--color-success-bg)' }}>
+              <TrendingUp className="w-6 h-6" style={{ color: 'var(--color-success)' }} />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Receita</h3>
-              <p className="text-sm text-gray-500">Meta de receita do mês</p>
+              <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>Receita</h3>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Meta de receita do mês</p>
             </div>
           </div>
           
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Realizado:</span>
-              <span className={`font-semibold ${realizados.receita >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>Realizado:</span>
+              <span className="font-semibold" style={{ color: realizados.receita >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                 {formatCurrency(realizados.receita)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Meta:</span>
-              <span className="font-semibold text-gray-900">
+              <span style={{ color: 'var(--color-text-secondary)' }}>Meta:</span>
+              <span className="font-semibold" style={{ color: 'var(--color-text)' }}>
                 {formatCurrency(formValues.metaReceita || 0)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Atingimento:</span>
-              <span className={`font-bold ${
+              <span style={{ color: 'var(--color-text-secondary)' }}>Atingimento:</span>
+              <span className="font-bold" style={{ color:
                 percentuais.receita !== null && percentuais.receita >= 100 
-                  ? 'text-green-600' 
+                  ? 'var(--color-success)' 
                   : percentuais.receita !== null && percentuais.receita < 0
-                    ? 'text-red-600'
-                    : 'text-blue-600'
-              }`}>
+                    ? 'var(--color-danger)'
+                    : 'var(--color-info)'
+              }}>
                 {formatPercent(percentuais.receita)}
               </span>
             </div>
             
             {/* Barra de progresso */}
-            <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="w-full rounded-full h-3" style={{ backgroundColor: 'var(--color-surface-2)' }}>
               <div
-                className={`h-3 rounded-full transition-all ${getProgressColor(percentuais.receita)}`}
-                style={{ width: `${getProgressWidth(percentuais.receita)}%` }}
+                className="h-3 rounded-full transition-all"
+                style={{ width: `${getProgressWidth(percentuais.receita)}%`, backgroundColor: getProgressColor(percentuais.receita) }}
               ></div>
             </div>
           </div>
         </div>
 
         {/* Meta de Captação Líquida */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
+        <div className="rounded-xl p-6" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-md)' }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 bg-blue-100 rounded-lg">
-              <ArrowDownUp className="w-6 h-6 text-blue-600" />
+            <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--color-info-bg)' }}>
+              <ArrowDownUp className="w-6 h-6" style={{ color: 'var(--color-info)' }} />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Captação Líquida</h3>
-              <p className="text-sm text-gray-500">Entradas - Saídas</p>
+              <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>Captação Líquida</h3>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Entradas - Saídas</p>
             </div>
           </div>
           
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Realizado:</span>
-              <span className={`font-semibold ${realizados.captacaoLiquida >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>Realizado:</span>
+              <span className="font-semibold" style={{ color: realizados.captacaoLiquida >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                 {formatCurrency(realizados.captacaoLiquida)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Meta:</span>
-              <span className="font-semibold text-gray-900">
+              <span style={{ color: 'var(--color-text-secondary)' }}>Meta:</span>
+              <span className="font-semibold" style={{ color: 'var(--color-text)' }}>
                 {formatCurrency(formValues.metaCaptacaoLiquida || 0)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Atingimento:</span>
-              <span className={`font-bold ${
+              <span style={{ color: 'var(--color-text-secondary)' }}>Atingimento:</span>
+              <span className="font-bold" style={{ color:
                 percentuais.captacaoLiquida !== null && percentuais.captacaoLiquida >= 100 
-                  ? 'text-green-600' 
+                  ? 'var(--color-success)' 
                   : percentuais.captacaoLiquida !== null && percentuais.captacaoLiquida < 0
-                    ? 'text-red-600'
-                    : 'text-blue-600'
-              }`}>
+                    ? 'var(--color-danger)'
+                    : 'var(--color-info)'
+              }}>
                 {formatPercent(percentuais.captacaoLiquida)}
               </span>
             </div>
             
-            <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="w-full rounded-full h-3" style={{ backgroundColor: 'var(--color-surface-2)' }}>
               <div
-                className={`h-3 rounded-full transition-all ${getProgressColor(percentuais.captacaoLiquida)}`}
-                style={{ width: `${getProgressWidth(percentuais.captacaoLiquida)}%` }}
+                className="h-3 rounded-full transition-all"
+                style={{ width: `${getProgressWidth(percentuais.captacaoLiquida)}%`, backgroundColor: getProgressColor(percentuais.captacaoLiquida) }}
               ></div>
             </div>
           </div>
         </div>
 
         {/* Meta de Transferência XP */}
-        <div className="bg-white rounded-xl shadow-lg p-6">
+        <div className="rounded-xl p-6" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-md)' }}>
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-3 bg-purple-100 rounded-lg">
-              <Repeat className="w-6 h-6 text-purple-600" />
+            <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--color-info-bg)' }}>
+              <Repeat className="w-6 h-6" style={{ color: 'var(--color-chart-4)' }} />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Transferência XP</h3>
-              <p className="text-sm text-gray-500">Saldo de transferências</p>
+              <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>Transferência XP</h3>
+              <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Saldo de transferências</p>
             </div>
           </div>
           
           <div className="space-y-3">
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Realizado:</span>
-              <span className={`font-semibold ${realizados.transferenciaXp >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <span style={{ color: 'var(--color-text-secondary)' }}>Realizado:</span>
+              <span className="font-semibold" style={{ color: realizados.transferenciaXp >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                 {formatCurrency(realizados.transferenciaXp)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Meta:</span>
-              <span className="font-semibold text-gray-900">
+              <span style={{ color: 'var(--color-text-secondary)' }}>Meta:</span>
+              <span className="font-semibold" style={{ color: 'var(--color-text)' }}>
                 {formatCurrency(formValues.metaTransferenciaXp || 0)}
               </span>
             </div>
             <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Atingimento:</span>
-              <span className={`font-bold ${
+              <span style={{ color: 'var(--color-text-secondary)' }}>Atingimento:</span>
+              <span className="font-bold" style={{ color:
                 percentuais.transferenciaXp !== null && percentuais.transferenciaXp >= 100 
-                  ? 'text-green-600' 
+                  ? 'var(--color-success)' 
                   : percentuais.transferenciaXp !== null && percentuais.transferenciaXp < 0
-                    ? 'text-red-600'
-                    : 'text-blue-600'
-              }`}>
+                    ? 'var(--color-danger)'
+                    : 'var(--color-info)'
+              }}>
                 {formatPercent(percentuais.transferenciaXp)}
               </span>
             </div>
             
-            <div className="w-full bg-gray-200 rounded-full h-3">
+            <div className="w-full rounded-full h-3" style={{ backgroundColor: 'var(--color-surface-2)' }}>
               <div
-                className={`h-3 rounded-full transition-all ${getProgressColor(percentuais.transferenciaXp)}`}
-                style={{ width: `${getProgressWidth(percentuais.transferenciaXp)}%` }}
+                className="h-3 rounded-full transition-all"
+                style={{ width: `${getProgressWidth(percentuais.transferenciaXp)}%`, backgroundColor: getProgressColor(percentuais.transferenciaXp) }}
               ></div>
             </div>
           </div>
@@ -409,8 +384,8 @@ export default function MetasPage() {
       </div>
 
       {/* Formulário de Metas */}
-      <div className="bg-white rounded-xl shadow-lg p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+      <div className="rounded-xl p-6" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-md)' }}>
+        <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text)' }}>
           Definir Metas para {getNomeMes(mesFiltro)} de {anoFiltro}
         </h2>
         
@@ -418,66 +393,70 @@ export default function MetasPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Meta de Receita */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
                 Meta de Receita (R$)
               </label>
               <input
                 type="number"
                 step="0.01"
                 {...register('metaReceita', { valueAsNumber: true })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg focus-gold"
+                style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
                 placeholder="0,00"
               />
               {errors.metaReceita && (
-                <p className="mt-1 text-sm text-red-600">{errors.metaReceita.message}</p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.metaReceita.message}</p>
               )}
             </div>
 
             {/* Meta de Captação Líquida */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
                 Meta de Captação Líquida (R$)
               </label>
               <input
                 type="number"
                 step="0.01"
                 {...register('metaCaptacaoLiquida', { valueAsNumber: true })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg focus-gold"
+                style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
                 placeholder="0,00"
               />
               {errors.metaCaptacaoLiquida && (
-                <p className="mt-1 text-sm text-red-600">{errors.metaCaptacaoLiquida.message}</p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.metaCaptacaoLiquida.message}</p>
               )}
-              <p className="mt-1 text-xs text-gray-500">Pode ser negativa (objetivo de redução)</p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>Pode ser negativa (objetivo de redução)</p>
             </div>
 
             {/* Meta de Transferência XP */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
                 Meta de Transferência XP (R$)
               </label>
               <input
                 type="number"
                 step="0.01"
                 {...register('metaTransferenciaXp', { valueAsNumber: true })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg focus-gold"
+                style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
                 placeholder="0,00"
               />
               {errors.metaTransferenciaXp && (
-                <p className="mt-1 text-sm text-red-600">{errors.metaTransferenciaXp.message}</p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.metaTransferenciaXp.message}</p>
               )}
             </div>
           </div>
 
           {/* Observações */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
               Observações
             </label>
             <textarea
               {...register('observacoes')}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 rounded-lg focus-gold"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
               placeholder="Anotações sobre as metas do mês..."
             />
           </div>
@@ -487,11 +466,12 @@ export default function MetasPage() {
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-2 px-6 py-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
             >
               {saving ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2" style={{ borderColor: 'var(--color-text-inverse)' }}></div>
                   Salvando...
                 </>
               ) : (
@@ -506,12 +486,12 @@ export default function MetasPage() {
       </div>
 
       {/* Info de atualização automática */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="rounded-lg p-4" style={{ backgroundColor: 'var(--color-info-bg)', border: '1px solid var(--color-info)' }}>
         <div className="flex items-start gap-3">
-          <RefreshCw className="w-5 h-5 text-blue-600 mt-0.5" />
+          <RefreshCw className="w-5 h-5 mt-0.5" style={{ color: 'var(--color-info)' }} />
           <div>
-            <h4 className="font-medium text-blue-900">Atualização Automática</h4>
-            <p className="text-sm text-blue-700 mt-1">
+            <h4 className="font-medium" style={{ color: 'var(--color-text)' }}>Atualização Automática</h4>
+            <p className="text-sm mt-1" style={{ color: 'var(--color-info)' }}>
               Os valores realizados são calculados automaticamente com base nos lançamentos de receita e captação do mês.
               Ao adicionar novos lançamentos em outras telas, os valores serão atualizados aqui.
             </p>

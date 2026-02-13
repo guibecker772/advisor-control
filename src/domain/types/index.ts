@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  OFFER_ASSET_CLASS_VALUES,
+  OFFER_AUDIENCE_VALUES,
+  OFFER_STATUS_VALUES,
+} from '../offers';
 
 // ============== CLIENTE ==============
 export const clienteSchema = z.object({
@@ -18,6 +23,21 @@ export const clienteSchema = z.object({
   codigoConta: z.string().optional().default(''),
   perfilInvestidor: z.enum(['Regular', 'Qualificado', 'Profissional']).optional().default('Regular'),
   observacoes: z.string().optional(),
+  convertedValue: z.number().optional(),
+  convertedAt: z.string().optional(),
+  hasFixedFee: z.boolean().optional(),
+  nextMeetingAt: z.string().optional(),
+  birthDate: z.string().optional(),
+  birthDay: z.number().int().min(1).max(31).optional(),
+  birthMonth: z.number().int().min(1).max(12).optional(),
+  metrics: z.object({
+    totalBRL: z.number().optional(),
+    onshoreBRL: z.number().optional(),
+    offshoreBRL: z.number().optional(),
+    cdiYearPct: z.number().optional(),
+  }).optional(),
+  customFields: z.record(z.string(), z.unknown()).optional(),
+  tags: z.array(z.string()).optional(),
   ownerUid: z.string().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
@@ -60,6 +80,9 @@ export const prospectSchema = z.object({
   realizadoTipo: z.enum(['captacao_liquida', 'transferencia_xp']).optional().default('captacao_liquida'),
   realizadoData: z.string().optional(),
   status: z.enum(['novo', 'em_contato', 'qualificado', 'proposta', 'ganho', 'perdido']).optional().default('novo'),
+  converted: z.boolean().optional().default(false),
+  convertedAt: z.string().optional(),
+  convertedClientId: z.string().optional(),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
   createdAt: z.string().optional(),
@@ -134,9 +157,22 @@ export const offerAllocationSchema = z.object({
   clienteNome: z.string().optional(),
   allocatedValue: z.number().min(0).default(0),
   saldoOk: z.boolean().default(false),
+  reserveDate: z.string().optional(),
+  notes: z.string().optional(),
+  status: z.enum(['RESERVADA', 'LIQUIDADA', 'CANCELADA']).optional().default('RESERVADA'),
 });
 
 export type OfferAllocation = z.output<typeof offerAllocationSchema>;
+
+export const offerAttachmentLinkSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(1, 'Nome é obrigatório'),
+  url: z.string().url('Link inválido'),
+  type: z.string().optional(),
+  createdAt: z.string().optional(),
+});
+
+export type OfferAttachmentLink = z.output<typeof offerAttachmentLinkSchema>;
 
 export const classeAtivoOptions = [
   'Emissão Bancária',
@@ -155,17 +191,27 @@ export const classeAtivoOptions = [
 export const offerReservationSchema = z.object({
   id: z.string().optional(),
   nomeAtivo: z.string().min(1, 'Nome do ativo é obrigatório'),
+  offerType: z.enum(['PRIVATE', 'PUBLIC']).optional().default('PRIVATE'),
+  minimumInvestment: z.number().min(0).optional(),
+  reservationEndDate: z.string().optional(),
   classeAtivo: z.string().optional().default('Outros'),
+  assetClass: z.enum(OFFER_ASSET_CLASS_VALUES).optional(),
+  audience: z.enum(OFFER_AUDIENCE_VALUES).optional(),
+  status: z.enum(OFFER_STATUS_VALUES).optional(),
+  competenceMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Competência inválida').optional(),
   commissionMode: z.enum(['ROA_PERCENT', 'FIXED_REVENUE']).default('ROA_PERCENT'),
   roaPercent: z.number().min(0).max(1).optional().default(0.02),
   revenueFixed: z.number().min(0).optional().default(0),
   repassePercent: z.number().min(0).max(1).optional().default(0.25),
   irPercent: z.number().min(0).max(1).optional().default(0.19),
   dataReserva: z.string().optional(),
-  dataLiquidacao: z.string().min(1, 'Data de liquidação é obrigatória'),
+  dataLiquidacao: z.string().optional(),
+  liquidationDate: z.string().optional(),
   reservaEfetuada: z.boolean().default(false),
   reservaLiquidada: z.boolean().default(false),
   clientes: z.array(offerAllocationSchema).min(1, 'Adicione ao menos 1 cliente'),
+  summary: z.string().optional(),
+  attachments: z.array(offerAttachmentLinkSchema).optional().default([]),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
   createdAt: z.string().optional(),
@@ -180,17 +226,27 @@ export type OfferReservationInput = z.input<typeof offerReservationSchema>;
 export const offerReservationFormSchema = z.object({
   id: z.string().optional(),
   nomeAtivo: z.string().min(1, 'Nome do ativo é obrigatório'),
+  offerType: z.enum(['PRIVATE', 'PUBLIC']).optional().default('PRIVATE'),
+  minimumInvestment: z.number().min(0).optional(),
+  reservationEndDate: z.string().optional(),
   classeAtivo: z.string().optional().default('Outros'),
+  assetClass: z.enum(OFFER_ASSET_CLASS_VALUES).optional().default('OUTROS'),
+  audience: z.enum(OFFER_AUDIENCE_VALUES).optional().default('GENERAL'),
+  status: z.enum(OFFER_STATUS_VALUES).optional().default('PENDENTE'),
+  competenceMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Competência inválida').optional(),
   commissionMode: z.enum(['ROA_PERCENT', 'FIXED_REVENUE']).default('ROA_PERCENT'),
   roaPercent: z.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%').optional().default(2),
   revenueFixed: z.number().min(0).optional().default(0),
   repassePercent: z.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%').optional().default(25),
   irPercent: z.number().min(0, 'Mínimo 0%').max(100, 'Máximo 100%').optional().default(19),
   dataReserva: z.string().optional(),
-  dataLiquidacao: z.string().min(1, 'Data de liquidação é obrigatória'),
+  dataLiquidacao: z.string().optional(),
+  liquidationDate: z.string().optional(),
   reservaEfetuada: z.boolean().default(false),
   reservaLiquidada: z.boolean().default(false),
   clientes: z.array(offerAllocationSchema).min(1, 'Adicione ao menos 1 cliente'),
+  summary: z.string().optional(),
+  attachments: z.array(offerAttachmentLinkSchema).optional().default([]),
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
   createdAt: z.string().optional(),
@@ -213,11 +269,10 @@ export function calcOfferReservationTotals(reservation: OfferReservation) {
 }
 
 export function calcOffersRevenueForMonth(reservations: OfferReservation[], mes: number, ano: number) {
+  const competenceMonth = `${ano}-${String(mes).padStart(2, '0')}`;
   return reservations
     .filter((r) => {
-      if (!r.dataLiquidacao) return false;
-      const d = new Date(r.dataLiquidacao + 'T00:00:00');
-      return d.getMonth() + 1 === mes && d.getFullYear() === ano;
+      return r.competenceMonth === competenceMonth && r.status === 'LIQUIDADA';
     })
     .reduce((sum, r) => sum + calcOfferReservationTotals(r).revenueHouse, 0);
 }
@@ -392,3 +447,6 @@ export const monthlyGoalsSchema = z.object({
 
 export type MonthlyGoals = z.output<typeof monthlyGoalsSchema>;
 export type MonthlyGoalsInput = z.input<typeof monthlyGoalsSchema>;
+
+
+

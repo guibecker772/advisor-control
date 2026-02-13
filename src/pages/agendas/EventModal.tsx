@@ -88,6 +88,7 @@ export default function EventModal({
 
   const title = watch('title');
   const meetingTypeOverride = watch('meetingTypeOverride');
+  const meetingType = watch('meetingType');
   const allDay = watch('allDay');
 
   // Auto-detectar tipo ao mudar título
@@ -132,20 +133,22 @@ export default function EventModal({
       <div className="flex min-h-full items-center justify-center p-4">
         {/* Backdrop */}
         <div 
-          className="fixed inset-0 bg-black/50 transition-opacity"
+          className="fixed inset-0 transition-opacity"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
           onClick={onClose}
         />
         
         {/* Modal */}
-        <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg transform transition-all">
+        <div className="relative rounded-xl shadow-xl w-full max-w-lg transform transition-all" style={{ backgroundColor: 'var(--color-surface)' }}>
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b">
-            <h2 className="text-lg font-semibold text-gray-900">
+          <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
               {isEditing ? 'Editar Evento' : 'Novo Evento'}
             </h2>
             <button
               onClick={onClose}
-              className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-1 hover-light rounded-lg transition-colors"
+              style={{ color: 'var(--color-text-secondary)' }}
             >
               <X className="w-5 h-5" />
             </button>
@@ -155,20 +158,21 @@ export default function EventModal({
           <form onSubmit={handleSubmit(handleFormSubmit)} className="p-4 space-y-4">
             {/* Título */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
                 Título *
               </label>
               <input
                 type="text"
                 {...register('title')}
                 placeholder="Ex: R1 - João Silva"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg focus-gold"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               />
               {errors.title && (
-                <p className="mt-1 text-sm text-red-600">{errors.title.message}</p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.title.message}</p>
               )}
               {title && !meetingTypeOverride && (
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                   Tipo detectado: <span className="font-medium">{MEETING_TYPE_LABELS[autoDetectedType as keyof typeof MEETING_TYPE_LABELS]}</span>
                 </p>
               )}
@@ -177,15 +181,35 @@ export default function EventModal({
             {/* Tipo de Reunião */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Tag className="w-4 h-4 text-gray-400" />
-                <label className="text-sm font-medium text-gray-700">Tipo de Reunião</label>
+                <Tag className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                <label className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Tipo de Reunião</label>
               </div>
+              <label className="flex items-center gap-2 text-sm mb-2">
+                <input
+                  type="checkbox"
+                  checked={meetingTypeOverride && meetingType === 'acompanhamento'}
+                  onChange={(event) => {
+                    if (event.target.checked) {
+                      setValue('meetingTypeOverride', true);
+                      setValue('meetingType', 'acompanhamento');
+                      return;
+                    }
+                    if (meetingType === 'acompanhamento') {
+                      setValue('meetingTypeOverride', false);
+                    }
+                  }}
+                  className="rounded"
+                  style={{ borderColor: 'var(--color-border)' }}
+                />
+                Marcar como reunião de acompanhamento
+              </label>
               <div className="flex items-center gap-4 mb-2">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
                     {...register('meetingTypeOverride')}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    className="rounded"
+                    style={{ borderColor: 'var(--color-border)' }}
                   />
                   Selecionar manualmente
                 </label>
@@ -193,7 +217,8 @@ export default function EventModal({
               {meetingTypeOverride && (
                 <select
                   {...register('meetingType')}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg focus-gold"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
                 >
                   {MEETING_TYPES.map(type => (
                     <option key={type} value={type}>
@@ -208,27 +233,29 @@ export default function EventModal({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
-                  <Clock className="w-4 h-4 text-gray-400" />
-                  <label className="text-sm font-medium text-gray-700">Início *</label>
+                  <Clock className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                  <label className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Início *</label>
                 </div>
                 <input
                   type={allDay ? 'date' : 'datetime-local'}
                   {...register('start')}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg focus-gold"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
                 />
                 {errors.start && (
-                  <p className="mt-1 text-sm text-red-600">{errors.start.message}</p>
+                  <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.start.message}</p>
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Fim *</label>
+                <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>Fim *</label>
                 <input
                   type={allDay ? 'date' : 'datetime-local'}
                   {...register('end')}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 rounded-lg focus-gold"
+                  style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
                 />
                 {errors.end && (
-                  <p className="mt-1 text-sm text-red-600">{errors.end.message}</p>
+                  <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.end.message}</p>
                 )}
               </div>
             </div>
@@ -238,7 +265,8 @@ export default function EventModal({
               <input
                 type="checkbox"
                 {...register('allDay')}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="rounded"
+                style={{ borderColor: 'var(--color-border)' }}
               />
               Dia inteiro
             </label>
@@ -246,69 +274,74 @@ export default function EventModal({
             {/* Local/Link */}
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <MapPin className="w-4 h-4 text-gray-400" />
-                <label className="text-sm font-medium text-gray-700">Local / Link</label>
+                <MapPin className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                <label className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Local / Link</label>
               </div>
               <input
                 type="text"
                 {...register('location')}
                 placeholder="Endereço ou link da reunião"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg focus-gold"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               />
             </div>
 
             {/* Convidados */}
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <Users className="w-4 h-4 text-gray-400" />
-                <label className="text-sm font-medium text-gray-700">Convidados</label>
+                <Users className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                <label className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>Convidados</label>
               </div>
               <input
                 type="text"
                 {...register('attendees')}
                 placeholder="E-mails separados por vírgula"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 rounded-lg focus-gold"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               />
             </div>
 
             {/* Descrição */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
                 Descrição
               </label>
               <textarea
                 {...register('description')}
                 rows={2}
                 placeholder="Detalhes do evento..."
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                className="w-full px-3 py-2 rounded-lg focus-gold resize-none"
+                style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               />
             </div>
 
             {/* Observações Internas */}
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <FileText className="w-4 h-4 text-gray-400" />
-                <label className="text-sm font-medium text-gray-700">
+                <FileText className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />
+                <label className="text-sm font-medium" style={{ color: 'var(--color-text-secondary)' }}>
                   Observações Internas
                 </label>
-                <span className="text-xs text-gray-400">(apenas no app)</span>
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>(apenas no app)</span>
               </div>
               <textarea
                 {...register('internalNotes')}
                 rows={3}
                 placeholder="Anotações privadas sobre esta reunião..."
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none bg-yellow-50"
+                className="w-full px-3 py-2 rounded-lg focus-gold resize-none"
+                style={{ backgroundColor: 'var(--color-warning-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
               />
             </div>
 
             {/* Ações */}
-            <div className="flex items-center justify-between pt-4 border-t">
+            <div className="flex items-center justify-between pt-4" style={{ borderTop: '1px solid var(--color-border)' }}>
               {isEditing ? (
                 <button
                   type="button"
                   onClick={() => setShowDeleteConfirm(true)}
                   disabled={deleting}
-                  className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg transition-colors disabled:opacity-50 hover:opacity-80"
+                  style={{ color: 'var(--color-danger)' }}
                 >
                   <Trash2 className="w-4 h-4" />
                   Cancelar Evento
@@ -321,14 +354,16 @@ export default function EventModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  className="px-4 py-2 hover-light rounded-lg transition-colors"
+                  style={{ color: 'var(--color-text-secondary)' }}
                 >
                   Fechar
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  className="px-4 py-2 rounded-lg hover:opacity-90 transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
                 >
                   {saving ? 'Salvando...' : isEditing ? 'Salvar' : 'Criar Evento'}
                 </button>
@@ -338,22 +373,24 @@ export default function EventModal({
 
           {/* Confirmação de exclusão */}
           {showDeleteConfirm && (
-            <div className="absolute inset-0 bg-white rounded-xl flex items-center justify-center p-6">
+            <div className="absolute inset-0 rounded-xl flex items-center justify-center p-6" style={{ backgroundColor: 'var(--color-surface)' }}>
               <div className="text-center">
-                <Trash2 className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Cancelar este evento?</h3>
-                <p className="text-gray-500 mb-6">Esta ação não pode ser desfeita.</p>
+                <Trash2 className="w-12 h-12 mx-auto mb-4" style={{ color: 'var(--color-danger)' }} />
+                <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--color-text)' }}>Cancelar este evento?</h3>
+                <p className="mb-6" style={{ color: 'var(--color-text-muted)' }}>Esta ação não pode ser desfeita.</p>
                 <div className="flex justify-center gap-3">
                   <button
                     onClick={() => setShowDeleteConfirm(false)}
-                    className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="px-4 py-2 hover-light rounded-lg transition-colors"
+                    style={{ color: 'var(--color-text-secondary)' }}
                   >
                     Voltar
                   </button>
                   <button
                     onClick={handleDelete}
                     disabled={deleting}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+                    className="px-4 py-2 rounded-lg hover:opacity-90 transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--color-danger)', color: 'var(--color-text-inverse)' }}
                   >
                     {deleting ? 'Cancelando...' : 'Sim, Cancelar'}
                   </button>

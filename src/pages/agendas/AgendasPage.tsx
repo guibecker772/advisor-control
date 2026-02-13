@@ -1,85 +1,299 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin, { type DateClickArg } from '@fullcalendar/interaction';
 import timeGridPlugin from '@fullcalendar/timegrid';
-import interactionPlugin from '@fullcalendar/interaction';
-import type { EventClickArg, DateSelectArg, EventInput } from '@fullcalendar/core';
-import { 
-  Calendar, 
-  Plus, 
-  RefreshCw, 
-  ChevronLeft, 
-  ChevronRight,
-  Bell
-} from 'lucide-react';
-import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, parseISO } from 'date-fns';
+import type {
+  DatesSetArg,
+  EventClickArg,
+  EventContentArg,
+  EventHoveringArg,
+  EventInput,
+} from '@fullcalendar/core';
+import { Bell, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
+import {
+  addHours,
+  endOfMonth,
+  endOfWeek,
+  endOfYear,
+  format,
+  isSameDay,
+  isSameMonth,
+  parseISO,
+  startOfMonth,
+  startOfWeek,
+  startOfYear,
+  subDays,
+} from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { calendarEventRepository } from '../../services/repositories';
 import type { CalendarEvent, CalendarMetrics, MetricsPeriod } from '../../domain/types/calendar';
-import { 
-  MEETING_TYPE_COLORS, 
-  getEffectiveMeetingType, 
-  calculateMetrics 
-} from '../../domain/types/calendar';
+import { MEETING_TYPE_LABELS, calculateMetrics, getEffectiveMeetingType } from '../../domain/types/calendar';
+import {
+  Button,
+  ConfirmDialog,
+  ErrorState,
+  IconButton,
+  InlineEmpty,
+  PageHeader,
+  PageSkeleton,
+  Tabs,
+} from '../../components/ui';
 
+import EventDetailDialog from './EventDetailDialog';
 import EventModal from './EventModal';
 import MetricsCards from './MetricsCards';
 import NotificationPanel from './NotificationPanel';
 
 type CalendarView = 'dayGridMonth' | 'timeGridWeek' | 'timeGridDay';
+type ChipVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'info';
+
+const CALENDAR_VIEW_ITEMS = [
+  { value: 'dayGridMonth', label: 'Mes' },
+  { value: 'timeGridWeek', label: 'Semana' },
+  { value: 'timeGridDay', label: 'Dia' },
+] as const;
+
+function isCalendarView(value: string): value is CalendarView {
+  return value === 'dayGridMonth' || value === 'timeGridWeek' || value === 'timeGridDay';
+}
+
+function capitalizeLabel(label: string): string {
+  if (!label) return label;
+  return `${label[0].toUpperCase()}${label.slice(1)}`;
+}
+
+function formatMonthShort(date: Date): string {
+  const month = format(date, 'LLL', { locale: ptBR }).replace('.', '');
+  return capitalizeLabel(month);
+}
+
+function formatPeriodLabel(view: CalendarView, start: Date, end: Date): string {
+  if (view === 'timeGridDay') {
+    return `${format(start, 'd')} ${formatMonthShort(start)} ${format(start, 'yyyy')}`;
+  }
+
+  if (view === 'timeGridWeek') {
+    const weekEnd = subDays(end, 1);
+    if (isSameMonth(start, weekEnd)) {
+      return `${format(start, 'd')}-${format(weekEnd, 'd')} ${formatMonthShort(weekEnd)} ${format(weekEnd, 'yyyy')}`;
+    }
+    return `${format(start, 'd')} ${formatMonthShort(start)}-${format(weekEnd, 'd')} ${formatMonthShort(weekEnd)} ${format(weekEnd, 'yyyy')}`;
+  }
+
+  return `${formatMonthShort(start)} ${format(start, 'yyyy')}`;
+}
+
+function parseDateSafe(isoDate: string): Date | null {
+  const parsed = parseISO(isoDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function eventIntersectsVisibleRange(event: CalendarEvent, range: { start: Date; end: Date }): boolean {
+  const startDate = parseDateSafe(event.start);
+  if (!startDate) return false;
+  const endDate = event.end ? parseDateSafe(event.end) ?? addHours(startDate, 1) : addHours(startDate, 1);
+  return startDate < range.end && endDate > range.start;
+}
+
+function buildQuickCreateRange(date: Date, view: CalendarView, allDay: boolean): { start: Date; end: Date } {
+  if (view === 'dayGridMonth' || allDay) {
+    const monthStart = new Date(date);
+    monthStart.setHours(9, 0, 0, 0);
+    return {
+      start: monthStart,
+      end: addHours(monthStart, 1),
+    };
+  }
+
+  const slotStart = new Date(date);
+  slotStart.setSeconds(0, 0);
+  return {
+    start: slotStart,
+    end: addHours(slotStart, 1),
+  };
+}
+
+function toSafeDate(dateValue: string, fallback: Date): Date {
+  const parsed = parseDateSafe(dateValue);
+  return parsed ?? fallback;
+}
+
+function getEventStatusData(status?: string): { label: string; variant: ChipVariant; persisted: boolean } {
+  if (!status) {
+    return { label: 'Confirmado', variant: 'info', persisted: false };
+  }
+
+  const normalized = status.toLowerCase();
+  if (normalized === 'confirmed') return { label: 'Confirmado', variant: 'success', persisted: true };
+  if (normalized === 'tentative') return { label: 'Pendente', variant: 'warning', persisted: true };
+  if (normalized === 'completed' || normalized === 'realizado') return { label: 'Realizado', variant: 'success', persisted: true };
+  if (normalized === 'cancelled' || normalized === 'cancelado') return { label: 'Cancelado', variant: 'danger', persisted: true };
+  return { label: 'Confirmado', variant: 'info', persisted: false };
+}
+
+function getEventCategoryData(event: CalendarEvent): { label: string; persisted: boolean } {
+  if (event.meetingType) {
+    return { label: MEETING_TYPE_LABELS[event.meetingType], persisted: true };
+  }
+  return { label: 'Reuniao', persisted: false };
+}
+
+function getTooltipClientLabel(event: CalendarEvent): string | null {
+  const rawEvent = event as CalendarEvent & Record<string, unknown>;
+  const candidateKeys = [
+    'clienteNome',
+    'clienteName',
+    'clientName',
+    'cliente',
+    'prospectNome',
+    'prospectName',
+    'prospect',
+  ];
+
+  for (const key of candidateKeys) {
+    const value = rawEvent[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function formatTooltipDate(event: CalendarEvent): string {
+  const start = parseDateSafe(event.start);
+  if (!start) return 'Horario indisponivel';
+  const end = event.end ? parseDateSafe(event.end) : null;
+
+  if (event.allDay) {
+    return format(start, "d 'de' MMM yyyy", { locale: ptBR });
+  }
+
+  if (end && isSameDay(start, end)) {
+    return `${format(start, "d 'de' MMM yyyy", { locale: ptBR })} - ${format(start, 'HH:mm')} - ${format(end, 'HH:mm')}`;
+  }
+
+  if (end) {
+    return `${format(start, "d 'de' MMM HH:mm", { locale: ptBR })} - ${format(end, "d 'de' MMM HH:mm", { locale: ptBR })}`;
+  }
+
+  return format(start, "d 'de' MMM yyyy - HH:mm", { locale: ptBR });
+}
+
+function detectCalendarReadOnly(user: unknown): boolean {
+  if (!user || typeof user !== 'object') return false;
+  const userData = user as Record<string, unknown>;
+
+  if (userData.readOnly === true || userData.isReadOnly === true) return true;
+
+  if (typeof userData.role === 'string') {
+    const normalizedRole = userData.role.toLowerCase();
+    if (normalizedRole === 'viewer' || normalizedRole === 'readonly' || normalizedRole === 'read_only') {
+      return true;
+    }
+  }
+
+  if (typeof userData.permissions === 'object' && userData.permissions) {
+    const permissions = userData.permissions as Record<string, unknown>;
+    if (permissions.calendar === 'read') return true;
+  }
+
+  return false;
+}
 
 export default function AgendasPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const ownerUid = user?.uid || 'dev';
+  const calendarRef = useRef<FullCalendar | null>(null);
+  const detailTriggerRef = useRef<HTMLElement | null>(null);
+  const handledQueryRef = useRef<string | null>(null);
 
-  // Estados
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [currentView, setCurrentView] = useState<CalendarView>('dayGridMonth');
-  const [currentDate, setCurrentDate] = useState(new Date());
-  
-  // Modal
+  const [periodRange, setPeriodRange] = useState<{ start: Date; end: Date }>({
+    start: startOfMonth(new Date()),
+    end: endOfMonth(new Date()),
+  });
+  const [visibleRange, setVisibleRange] = useState<{ start: Date; end: Date }>({
+    start: startOfMonth(new Date()),
+    end: endOfMonth(new Date()),
+  });
+
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [selectedDateRange, setSelectedDateRange] = useState<{ start: Date; end: Date } | null>(null);
-  
-  // Métricas
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
   const [metricsPeriod, setMetricsPeriod] = useState<MetricsPeriod>('month');
   const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string }>({
     start: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
     end: format(endOfMonth(new Date()), 'yyyy-MM-dd'),
   });
-  
-  // Notificações panel
+
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
 
-  // Referência ao calendário
-  const [calendarApi, setCalendarApi] = useState<any>(null);
+  const [isDesktopHover, setIsDesktopHover] = useState(false);
+  const [hoverTooltip, setHoverTooltip] = useState<{
+    event: CalendarEvent;
+    x: number;
+    y: number;
+  } | null>(null);
 
-  // Carregar eventos
+  const isReadOnly = detectCalendarReadOnly(user);
+  const canManageEvents = Boolean(user) && !isReadOnly;
+
+  useEffect(() => {
+    const media = window.matchMedia('(hover: hover) and (pointer: fine)');
+    const syncMedia = () => setIsDesktopHover(media.matches);
+    syncMedia();
+    media.addEventListener('change', syncMedia);
+    return () => media.removeEventListener('change', syncMedia);
+  }, []);
+
   const loadEvents = useCallback(async () => {
-    setLoading(true);
+    setLoadError(null);
+
+    if (hasLoaded) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const all = await calendarEventRepository.getAll(ownerUid);
-      setEvents(all.filter(e => e.status !== 'cancelled'));
+      const allEvents = await calendarEventRepository.getAll(ownerUid);
+      setEvents(allEvents.filter((event) => event.status !== 'cancelled'));
     } catch (error) {
       console.error('Erro ao carregar eventos:', error);
+      setLoadError('Nao foi possivel carregar os eventos da agenda.');
       toast.error('Erro ao carregar eventos');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
+      setHasLoaded(true);
     }
-  }, [ownerUid]);
+  }, [hasLoaded, ownerUid]);
 
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
 
-  // Converter eventos para formato FullCalendar
   const calendarEvents: EventInput[] = useMemo(() => {
-    return events.map(event => {
+    return events.map((event) => {
       const meetingType = getEffectiveMeetingType(event);
       return {
         id: event.id,
@@ -87,8 +301,7 @@ export default function AgendasPage() {
         start: event.start,
         end: event.end,
         allDay: event.allDay,
-        backgroundColor: MEETING_TYPE_COLORS[meetingType],
-        borderColor: MEETING_TYPE_COLORS[meetingType],
+        classNames: ['ac-calendar-event', `ac-calendar-event--${meetingType}`],
         extendedProps: {
           ...event,
           meetingType,
@@ -97,7 +310,6 @@ export default function AgendasPage() {
     });
   }, [events]);
 
-  // Calcular métricas
   const metrics: CalendarMetrics = useMemo(() => {
     const now = new Date();
     let startDate: Date;
@@ -108,12 +320,12 @@ export default function AgendasPage() {
       case 'week':
         startDate = startOfWeek(now, { weekStartsOn: 1 });
         endDate = endOfWeek(now, { weekStartsOn: 1 });
-        label = 'Esta Semana';
+        label = 'Esta semana';
         break;
       case 'month':
         startDate = startOfMonth(now);
         endDate = endOfMonth(now);
-        label = format(now, 'MMMM yyyy', { locale: ptBR });
+        label = `${formatMonthShort(now)} ${format(now, 'yyyy')}`;
         break;
       case 'year':
         startDate = startOfYear(now);
@@ -121,157 +333,280 @@ export default function AgendasPage() {
         label = format(now, 'yyyy');
         break;
       case 'custom':
-        startDate = parseISO(customDateRange.start);
-        endDate = parseISO(customDateRange.end);
+        startDate = toSafeDate(customDateRange.start, now);
+        endDate = toSafeDate(customDateRange.end, now);
         label = `${format(startDate, 'dd/MM/yy')} - ${format(endDate, 'dd/MM/yy')}`;
         break;
     }
 
     return calculateMetrics(events, startDate, endDate, label);
-  }, [events, metricsPeriod, customDateRange]);
+  }, [customDateRange.end, customDateRange.start, events, metricsPeriod]);
 
-  // Handlers
-  const handleDateSelect = useCallback((selectInfo: DateSelectArg) => {
-    setSelectedEvent(null);
-    setSelectedDateRange({ start: selectInfo.start, end: selectInfo.end });
-    setModalOpen(true);
+  const visibleEvents = useMemo(() => {
+    return events.filter((event) => eventIntersectsVisibleRange(event, visibleRange));
+  }, [events, visibleRange]);
+
+  const periodLabel = useMemo(() => {
+    return formatPeriodLabel(currentView, periodRange.start, periodRange.end);
+  }, [currentView, periodRange.end, periodRange.start]);
+
+  const openCreateModal = useCallback(
+    (prefillRange?: { start: Date; end: Date }) => {
+      if (!canManageEvents) return;
+      setSelectedEvent(null);
+      setSelectedDateRange(prefillRange ?? null);
+      setModalOpen(true);
+    },
+    [canManageEvents],
+  );
+
+  const closeEventDetail = useCallback(() => {
+    setDetailOpen(false);
+    setDetailEvent(null);
+    setDeleteConfirmOpen(false);
+    const trigger = detailTriggerRef.current;
+    if (trigger) {
+      requestAnimationFrame(() => {
+        trigger.focus();
+      });
+    }
   }, []);
+
+  const handleDateClick = useCallback(
+    (clickInfo: DateClickArg) => {
+      if (!canManageEvents) return;
+      const range = buildQuickCreateRange(clickInfo.date, currentView, clickInfo.allDay);
+      openCreateModal(range);
+    },
+    [canManageEvents, currentView, openCreateModal],
+  );
 
   const handleEventClick = useCallback((clickInfo: EventClickArg) => {
     const eventData = clickInfo.event.extendedProps as CalendarEvent;
-    setSelectedEvent({ ...eventData, id: clickInfo.event.id });
-    setSelectedDateRange(null);
-    setModalOpen(true);
+    detailTriggerRef.current = clickInfo.el;
+    setDetailEvent({ ...eventData, id: clickInfo.event.id });
+    setDetailOpen(true);
+    setHoverTooltip(null);
   }, []);
 
-  const handleModalClose = () => {
+  const handleEditFromDetail = useCallback(() => {
+    if (!detailEvent || !canManageEvents) return;
+    setDetailOpen(false);
+    setSelectedEvent(detailEvent);
+    setSelectedDateRange(null);
+    setModalOpen(true);
+  }, [canManageEvents, detailEvent]);
+
+  const closeEventModal = useCallback(() => {
     setModalOpen(false);
     setSelectedEvent(null);
     setSelectedDateRange(null);
-  };
+  }, []);
 
-  const handleEventSave = async (eventData: CalendarEvent) => {
-    try {
-      if (eventData.id) {
-        // Atualizar
-        await calendarEventRepository.update(eventData.id, eventData, ownerUid);
-        toast.success('Evento atualizado!');
-      } else {
-        // Criar
-        await calendarEventRepository.create(eventData, ownerUid);
-        toast.success('Evento criado!');
+  const handleEventSave = useCallback(
+    async (eventData: CalendarEvent) => {
+      try {
+        if (eventData.id) {
+          await calendarEventRepository.update(eventData.id, eventData, ownerUid);
+          toast.success('Evento atualizado');
+        } else {
+          await calendarEventRepository.create(eventData, ownerUid);
+          toast.success('Evento criado');
+        }
+        closeEventModal();
+        await loadEvents();
+      } catch (error) {
+        console.error('Erro ao salvar evento:', error);
+        toast.error('Erro ao salvar evento');
       }
-      handleModalClose();
-      loadEvents();
-    } catch (error) {
-      console.error('Erro ao salvar evento:', error);
-      toast.error('Erro ao salvar evento');
-    }
-  };
+    },
+    [closeEventModal, loadEvents, ownerUid],
+  );
 
-  const handleEventDelete = async (eventId: string) => {
-    try {
+  const cancelEvent = useCallback(
+    async (eventId: string) => {
       await calendarEventRepository.update(eventId, { status: 'cancelled' }, ownerUid);
-      toast.success('Evento cancelado!');
-      handleModalClose();
-      loadEvents();
+      toast.success('Evento cancelado');
+      await loadEvents();
+    },
+    [loadEvents, ownerUid],
+  );
+
+  const handleEventDeleteFromModal = useCallback(
+    async (eventId: string) => {
+      try {
+        await cancelEvent(eventId);
+        closeEventModal();
+      } catch (error) {
+        console.error('Erro ao cancelar evento:', error);
+        toast.error('Erro ao cancelar evento');
+      }
+    },
+    [cancelEvent, closeEventModal],
+  );
+
+  const handleEventDeleteFromDetail = useCallback(async () => {
+    if (!detailEvent?.id) return;
+    try {
+      await cancelEvent(detailEvent.id);
+      closeEventDetail();
     } catch (error) {
       console.error('Erro ao cancelar evento:', error);
       toast.error('Erro ao cancelar evento');
     }
-  };
+  }, [cancelEvent, closeEventDetail, detailEvent?.id]);
 
-  // Navegação do calendário
-  const handlePrev = () => {
-    if (calendarApi) {
-      calendarApi.prev();
-      setCurrentDate(calendarApi.getDate());
-    }
-  };
+  const handlePrev = useCallback(() => {
+    calendarRef.current?.getApi().prev();
+  }, []);
 
-  const handleNext = () => {
-    if (calendarApi) {
-      calendarApi.next();
-      setCurrentDate(calendarApi.getDate());
-    }
-  };
+  const handleNext = useCallback(() => {
+    calendarRef.current?.getApi().next();
+  }, []);
 
-  const handleToday = () => {
-    if (calendarApi) {
-      calendarApi.today();
-      setCurrentDate(calendarApi.getDate());
-    }
-  };
+  const handleToday = useCallback(() => {
+    calendarRef.current?.getApi().today();
+  }, []);
 
-  const handleViewChange = (view: CalendarView) => {
-    setCurrentView(view);
-    if (calendarApi) {
-      calendarApi.changeView(view);
-    }
-  };
+  const handleViewChange = useCallback((nextView: CalendarView) => {
+    setCurrentView(nextView);
+    calendarRef.current?.getApi().changeView(nextView);
+  }, []);
 
-  // Título do período atual
-  const periodTitle = useMemo(() => {
-    if (!calendarApi) return format(currentDate, 'MMMM yyyy', { locale: ptBR });
-    
-    switch (currentView) {
-      case 'timeGridDay':
-        return format(currentDate, "EEEE, d 'de' MMMM", { locale: ptBR });
-      case 'timeGridWeek':
-        const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-        const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
-        return `${format(weekStart, 'd MMM', { locale: ptBR })} - ${format(weekEnd, 'd MMM yyyy', { locale: ptBR })}`;
-      default:
-        return format(currentDate, 'MMMM yyyy', { locale: ptBR });
+  const handleDatesSet = useCallback((arg: DatesSetArg) => {
+    const nextView = arg.view.type;
+    if (isCalendarView(nextView)) {
+      setCurrentView(nextView);
     }
-  }, [currentDate, currentView, calendarApi]);
+    setPeriodRange({ start: arg.view.currentStart, end: arg.view.currentEnd });
+    setVisibleRange({ start: arg.start, end: arg.end });
+  }, []);
+
+  const handleEventMouseEnter = useCallback(
+    (arg: EventHoveringArg) => {
+      if (!isDesktopHover) return;
+      const eventData = arg.event.extendedProps as CalendarEvent;
+      setHoverTooltip({
+        event: { ...eventData, id: arg.event.id },
+        x: arg.jsEvent.clientX,
+        y: arg.jsEvent.clientY,
+      });
+    },
+    [isDesktopHover],
+  );
+
+  const handleEventMouseLeave = useCallback(() => {
+    setHoverTooltip(null);
+  }, []);
+
+  const renderEventContent = useCallback(
+    (content: EventContentArg) => {
+      const eventData = content.event.extendedProps as CalendarEvent;
+      const statusData = getEventStatusData(eventData.status);
+      const categoryData = getEventCategoryData(eventData);
+      const showChips = currentView !== 'dayGridMonth';
+
+      return (
+        <div className="ac-event-pill">
+          <div className="ac-event-main">
+            {content.timeText && <span className="ac-event-time">{content.timeText}</span>}
+            <span className="ac-event-title">{content.event.title}</span>
+          </div>
+          {showChips && (
+            <div className="ac-event-chip-row">
+              <span className={`ac-event-chip ac-event-chip--${statusData.variant}`}>
+                {statusData.label}
+              </span>
+              <span className="ac-event-chip ac-event-chip--neutral">{categoryData.label}</span>
+            </div>
+          )}
+        </div>
+      );
+    },
+    [currentView],
+  );
+
+  useEffect(() => {
+    if (!hasLoaded) return;
+
+    const queryKey = searchParams.toString();
+    if (handledQueryRef.current === queryKey) return;
+    handledQueryRef.current = queryKey;
+
+    const quickCreateParam = searchParams.get('quickCreate');
+    const todayParam = searchParams.get('today');
+    const eventParam = searchParams.get('event');
+
+    if (!quickCreateParam && !todayParam && !eventParam) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    let shouldReplace = false;
+
+    if (todayParam === '1') {
+      handleToday();
+      nextParams.delete('today');
+      shouldReplace = true;
+    }
+
+    if (quickCreateParam === '1') {
+      openCreateModal();
+      nextParams.delete('quickCreate');
+      shouldReplace = true;
+    }
+
+    if (eventParam) {
+      const targetEvent = events.find((event) => event.id === eventParam);
+      if (targetEvent) {
+        setDetailEvent(targetEvent);
+        setDetailOpen(true);
+      }
+      nextParams.delete('event');
+      shouldReplace = true;
+    }
+
+    if (shouldReplace) {
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [events, handleToday, hasLoaded, openCreateModal, searchParams, setSearchParams]);
+
+  if (loading && !hasLoaded) {
+    return <PageSkeleton showKpis kpiCount={4} rows={5} />;
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Calendar className="w-8 h-8 text-blue-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Agendas</h1>
-            <p className="text-sm text-gray-500">Gerencie suas reuniões e compromissos</p>
+      <PageHeader
+        title="Agendas"
+        subtitle="Gerencie reunioes e compromissos"
+        actions={(
+          <div className="flex items-center gap-2">
+            <IconButton
+              icon={<Bell className="w-5 h-5" />}
+              label="Abrir notificacoes"
+              onClick={() => setNotificationPanelOpen((prev) => !prev)}
+            />
+            <Button
+              variant="ghost"
+              leftIcon={<RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />}
+              onClick={loadEvents}
+              disabled={loading || isRefreshing}
+              aria-label="Atualizar eventos"
+            >
+              Atualizar
+            </Button>
+            {canManageEvents && (
+              <Button
+                leftIcon={<Plus className="w-4 h-4" />}
+                onClick={() => openCreateModal()}
+              >
+                Criar evento
+              </Button>
+            )}
           </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setNotificationPanelOpen(!notificationPanelOpen)}
-            className="relative p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Notificações"
-          >
-            <Bell className="w-5 h-5" />
-          </button>
-          
-          <button
-            onClick={loadEvents}
-            disabled={loading}
-            className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="hidden sm:inline">Atualizar</span>
-          </button>
-          
-          <button
-            onClick={() => {
-              setSelectedEvent(null);
-              setSelectedDateRange(null);
-              setModalOpen(true);
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Novo Evento</span>
-          </button>
-        </div>
-      </div>
+        )}
+      />
 
-      {/* Cards de Métricas */}
-      <MetricsCards 
+      <MetricsCards
         metrics={metrics}
         period={metricsPeriod}
         onPeriodChange={setMetricsPeriod}
@@ -279,153 +614,198 @@ export default function AgendasPage() {
         onCustomDateChange={setCustomDateRange}
       />
 
-      {/* Painel de Notificações (colapsável) */}
       {notificationPanelOpen && (
         <NotificationPanel onClose={() => setNotificationPanelOpen(false)} />
       )}
 
-      {/* Controles do Calendário */}
-      <div className="bg-white rounded-xl shadow-sm border p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-          {/* Navegação */}
-          <div className="flex items-center gap-2">
-            <button
+      <div
+        className="rounded-xl shadow-sm p-4 space-y-4"
+        style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}
+      >
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              leftIcon={<ChevronLeft className="w-4 h-4" />}
               onClick={handlePrev}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label="Periodo anterior"
             >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            <button
+              Anterior
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={handleToday}
-              className="px-3 py-1.5 text-sm font-medium hover:bg-gray-100 rounded-lg transition-colors"
             >
               Hoje
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              rightIcon={<ChevronRight className="w-4 h-4" />}
               onClick={handleNext}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label="Proximo periodo"
             >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-            <h2 className="text-lg font-semibold text-gray-900 ml-2 capitalize">
-              {periodTitle}
+              Proximo
+            </Button>
+            <h2
+              className="text-lg font-semibold ml-1"
+              style={{ color: 'var(--color-text)' }}
+            >
+              {periodLabel}
             </h2>
           </div>
-          
-          {/* Seletores de Visualização */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => handleViewChange('timeGridDay')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                currentView === 'timeGridDay'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Dia
-            </button>
-            <button
-              onClick={() => handleViewChange('timeGridWeek')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                currentView === 'timeGridWeek'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Semana
-            </button>
-            <button
-              onClick={() => handleViewChange('dayGridMonth')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                currentView === 'dayGridMonth'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Mês
-            </button>
-          </div>
-        </div>
 
-        {/* Legenda */}
-        <div className="flex flex-wrap gap-4 mb-4 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: MEETING_TYPE_COLORS.R1 }} />
-            <span>R1</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: MEETING_TYPE_COLORS.R2 }} />
-            <span>R2</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: MEETING_TYPE_COLORS.areas_cross }} />
-            <span>Áreas Cross</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: MEETING_TYPE_COLORS.outro }} />
-            <span>Outro</span>
-          </div>
-        </div>
-
-        {/* Calendário */}
-        <div className="fc-custom">
-          <FullCalendar
-            ref={(el) => {
-              if (el) {
-                setCalendarApi(el.getApi());
+          <Tabs
+            items={CALENDAR_VIEW_ITEMS.map((item) => ({ value: item.value, label: item.label }))}
+            value={currentView}
+            onChange={(value) => {
+              if (isCalendarView(value)) {
+                handleViewChange(value);
               }
             }}
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView={currentView}
-            headerToolbar={false}
-            locale="pt-br"
-            events={calendarEvents}
-            selectable={true}
-            selectMirror={true}
-            dayMaxEvents={true}
-            weekends={true}
-            firstDay={1}
-            slotMinTime="06:00:00"
-            slotMaxTime="22:00:00"
-            allDaySlot={true}
-            nowIndicator={true}
-            select={handleDateSelect}
-            eventClick={handleEventClick}
-            height="auto"
-            eventTimeFormat={{
-              hour: '2-digit',
-              minute: '2-digit',
-              meridiem: false,
-              hour12: false,
-            }}
-            slotLabelFormat={{
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            }}
-            dayHeaderFormat={{
-              weekday: 'short',
-              day: 'numeric',
-            }}
-            buttonText={{
-              today: 'Hoje',
-              month: 'Mês',
-              week: 'Semana',
-              day: 'Dia',
-            }}
+            size="md"
           />
         </div>
+
+        {loadError && events.length === 0 ? (
+          <ErrorState
+            title="Erro ao carregar agenda"
+            description={loadError}
+            onRetry={loadEvents}
+            retryLabel="Tentar novamente"
+          />
+        ) : (
+          <>
+            {!loadError && visibleEvents.length === 0 && (
+              <InlineEmpty
+                message="Nenhum evento no periodo visivel."
+                action={canManageEvents ? { label: 'Criar evento', onClick: () => openCreateModal() } : undefined}
+              />
+            )}
+
+            <div className="relative">
+              <div className="fc-custom">
+                <FullCalendar
+                  ref={calendarRef}
+                  plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                  initialView={currentView}
+                  headerToolbar={false}
+                  locale="pt-br"
+                  timeZone="local"
+                  events={calendarEvents}
+                  selectable={false}
+                  dayMaxEvents
+                  weekends
+                  firstDay={1}
+                  slotMinTime="06:00:00"
+                  slotMaxTime="22:00:00"
+                  allDaySlot
+                  nowIndicator
+                  dateClick={handleDateClick}
+                  eventClick={handleEventClick}
+                  eventMouseEnter={handleEventMouseEnter}
+                  eventMouseLeave={handleEventMouseLeave}
+                  datesSet={handleDatesSet}
+                  eventContent={renderEventContent}
+                  height="auto"
+                  eventTimeFormat={{
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    meridiem: false,
+                    hour12: false,
+                  }}
+                  slotLabelFormat={{
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  }}
+                  dayHeaderFormat={{
+                    weekday: 'short',
+                    day: 'numeric',
+                  }}
+                  buttonText={{
+                    today: 'Hoje',
+                    month: 'Mes',
+                    week: 'Semana',
+                    day: 'Dia',
+                  }}
+                />
+              </div>
+
+              {isRefreshing && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center rounded-lg"
+                  style={{ backgroundColor: 'var(--color-surface-hover)' }}
+                >
+                  <div
+                    className="w-8 h-8 rounded-full animate-spin border-2 border-t-transparent"
+                    style={{ borderColor: 'var(--color-gold)' }}
+                    aria-label="Atualizando eventos"
+                  />
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Modal de Evento */}
       {modalOpen && (
         <EventModal
           event={selectedEvent}
           dateRange={selectedDateRange}
-          onClose={handleModalClose}
+          onClose={closeEventModal}
           onSave={handleEventSave}
-          onDelete={handleEventDelete}
+          onDelete={handleEventDeleteFromModal}
         />
+      )}
+
+      <EventDetailDialog
+        isOpen={detailOpen}
+        event={detailEvent}
+        readOnly={!canManageEvents}
+        onClose={closeEventDetail}
+        onEdit={canManageEvents ? handleEditFromDetail : undefined}
+        onDelete={canManageEvents ? () => setDeleteConfirmOpen(true) : undefined}
+      />
+
+      <ConfirmDialog
+        isOpen={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={handleEventDeleteFromDetail}
+        title="Cancelar evento"
+        message="Tem certeza que deseja cancelar este evento?"
+        confirmText="Cancelar evento"
+        cancelText="Voltar"
+        variant="danger"
+      />
+
+      {isDesktopHover && hoverTooltip && !detailOpen && (
+        <div
+          className="fixed pointer-events-none rounded-lg px-3 py-2 shadow-lg border max-w-xs"
+          style={{
+            top: hoverTooltip.y + 12,
+            left: hoverTooltip.x + 12,
+            backgroundColor: 'var(--color-surface)',
+            color: 'var(--color-text)',
+            borderColor: 'var(--color-border-subtle)',
+            zIndex: 'var(--z-tooltip)',
+          }}
+        >
+          <p className="text-sm font-semibold">{hoverTooltip.event.title}</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+            {formatTooltipDate(hoverTooltip.event)}
+          </p>
+          {getTooltipClientLabel(hoverTooltip.event) && (
+            <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+              {getTooltipClientLabel(hoverTooltip.event)}
+            </p>
+          )}
+          <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+            Status: {getEventStatusData(hoverTooltip.event.status).label}
+          </p>
+        </div>
       )}
     </div>
   );

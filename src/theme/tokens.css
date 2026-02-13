@@ -120,6 +120,23 @@
   --z-modal: 400;
   --z-tooltip: 500;
   --z-toast: 600;
+
+  /* ===== CHART / PROGRESS TOKENS ===== */
+  --chart-1: #3B82F6;
+  --chart-2: #22C55E;
+  --chart-3: #F59E0B;
+  --chart-4: #EF4444;
+  --chart-5: #8B5CF6;
+  --chart-grid: rgba(255, 255, 255, 0.06);
+  --chart-axis: var(--color-text-muted);
+  --chart-tooltip-bg: var(--color-surface);
+  --chart-tooltip-border: var(--color-border);
+
+  /* Progress bar track */
+  --progress-track: var(--color-surface-3);
+
+  /* Badge purple */
+  --badge-purple: #A78BFA;
 }
 
 /* ===== DARK THEME UTILITIES (Tailwind-like) ===== */
@@ -148,4 +165,82 @@
 .focus-gold:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-gold);
+}
+
+/* ===========================================================
+   LIGHT THEME OVERRIDES
+   Dark é default (:root). Light ativa via html.light.
+   =========================================================== */
+html.light {
+  /* ===== BACKGROUNDS ===== */
+  --color-bg: #FFFFFF;
+  --color-bg-elevated: #F8FAFC;
+
+  /* ===== SURFACES ===== */
+  --color-surface: #FFFFFF;
+  --color-surface-2: #F1F5F9;
+  --color-surface-3: #E2E8F0;
+  --color-surface-hover: rgba(0, 0, 0, 0.03);
+
+  /* ===== HOVERS ===== */
+  --hover-subtle: rgba(0, 0, 0, 0.02);
+  --hover-light: rgba(0, 0, 0, 0.04);
+  --hover-medium: rgba(0, 0, 0, 0.06);
+  --row-hover: rgba(0, 0, 0, 0.02);
+  --row-selected: rgba(180, 140, 50, 0.08);
+
+  /* ===== BORDERS ===== */
+  --color-border: rgba(0, 0, 0, 0.10);
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+  --color-border-active: var(--color-gold);
+
+  /* ===== TEXT ===== */
+  --color-text: #1A1D23;
+  --color-text-secondary: #4B5563;
+  --color-text-muted: #9CA3AF;
+  --color-text-inverse: #FFFFFF;
+
+  /* ===== GOLD (mais escuro p/ contraste em fundo claro) ===== */
+  --color-gold: #A68523;
+  --color-gold-hover: #8E7118;
+  --color-gold-muted: #7A6115;
+  --color-gold-bg: rgba(166, 133, 35, 0.08);
+  --color-gold-bg-hover: rgba(166, 133, 35, 0.14);
+
+  /* ===== SEMÂNTICAS (bg mais leve) ===== */
+  --color-success-bg: rgba(34, 197, 94, 0.10);
+  --color-warning-bg: rgba(245, 158, 11, 0.10);
+  --color-danger-bg: rgba(239, 68, 68, 0.10);
+  --color-info-bg: rgba(59, 130, 246, 0.10);
+
+  /* ===== SIDEBAR ===== */
+  --sidebar-bg: #F8FAFC;
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-item-hover: rgba(0, 0, 0, 0.04);
+  --sidebar-item-active-bg: rgba(166, 133, 35, 0.10);
+  --sidebar-item-active-border: var(--color-gold);
+
+  /* ===== TOPBAR ===== */
+  --topbar-bg: #FFFFFF;
+  --topbar-border: rgba(0, 0, 0, 0.08);
+
+  /* ===== SHADOWS (leves) ===== */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-gold: 0 0 0 2px var(--color-gold);
+
+  /* ===== CHART / PROGRESS TOKENS (light) ===== */
+  --chart-1: #2563EB;
+  --chart-2: #16A34A;
+  --chart-3: #D97706;
+  --chart-4: #DC2626;
+  --chart-5: #7C3AED;
+  --chart-grid: rgba(0, 0, 0, 0.06);
+  --chart-axis: var(--color-text-muted);
+  --chart-tooltip-bg: var(--color-surface);
+  --chart-tooltip-border: var(--color-border);
+
+  --progress-track: var(--color-surface-3);
+  --badge-purple: #7C3AED;
 }

@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useId, useRef, type RefObject } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -9,6 +9,8 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   showCloseButton?: boolean;
   footer?: ReactNode;
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  restoreFocusRef?: RefObject<HTMLElement | null>;
 }
 
 export function Modal({
@@ -19,21 +21,63 @@ export function Modal({
   size = 'md',
   showCloseButton = true,
   footer,
+  initialFocusRef,
+  restoreFocusRef,
 }: ModalProps) {
-  // Fechar com ESC
+  const titleId = useId();
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    if (!isOpen) return undefined;
+
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+
+    const focusTimer = window.setTimeout(() => {
+      if (initialFocusRef?.current) {
+        initialFocusRef.current.focus();
+        return;
+      }
+
+      const firstField = contentRef.current?.querySelector<HTMLElement>(
+        'input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+      );
+      if (firstField) {
+        firstField.focus();
+        return;
+      }
+
+      const firstFocusable = contentRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      firstFocusable?.focus();
+    }, 0);
+
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
     };
-    if (isOpen) {
-      document.addEventListener('keydown', handleEsc);
-      document.body.style.overflow = 'hidden';
-    }
+
+    const previousOverflow = document.body.style.overflow;
+    const restoreTarget = restoreFocusRef?.current ?? null;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleEsc);
+
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener('keydown', handleEsc);
-      document.body.style.overflow = '';
+      document.body.style.overflow = previousOverflow;
+
+      if (restoreTarget) {
+        restoreTarget.focus();
+      } else {
+        previousFocusRef.current?.focus();
+      }
     };
-  }, [isOpen, onClose]);
+  }, [initialFocusRef, isOpen, onClose, restoreFocusRef]);
 
   if (!isOpen) return null;
 
@@ -52,13 +96,17 @@ export function Modal({
     >
       {/* Backdrop */}
       <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 backdrop-blur-sm"
         onClick={onClose}
-        style={{ zIndex: 'var(--z-modal-backdrop)' }}
+        style={{ zIndex: 'var(--z-modal-backdrop)', backgroundColor: 'rgba(0,0,0,0.6)' }}
       />
       
       {/* Modal Content */}
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
+        ref={contentRef}
         className={`
           relative w-full ${sizeClasses[size]} 
           rounded-xl overflow-hidden
@@ -79,6 +127,7 @@ export function Modal({
           >
             {title && (
               <h2 
+                id={titleId}
                 className="text-lg font-semibold"
                 style={{ color: 'var(--color-text)' }}
               >
@@ -88,7 +137,7 @@ export function Modal({
             {showCloseButton && (
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-lg transition-colors hover:bg-[var(--color-surface-hover)]"
+                className="focus-gold inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg p-1.5 transition-colors hover:bg-[var(--color-surface-hover)]"
                 style={{ color: 'var(--color-text-muted)' }}
                 aria-label="Fechar"
               >

@@ -1,12 +1,13 @@
 import { z } from 'zod';
 
 // ============== TIPOS DE REUNIÃO ==============
-export const MEETING_TYPES = ['R1', 'R2', 'areas_cross', 'outro'] as const;
+export const MEETING_TYPES = ['R1', 'R2', 'acompanhamento', 'areas_cross', 'outro'] as const;
 export type MeetingType = typeof MEETING_TYPES[number];
 
 export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
   R1: 'R1 - Primeira Reunião',
   R2: 'R2 - Segunda Reunião',
+  acompanhamento: 'Reunião de Acompanhamento',
   areas_cross: 'Áreas Cross',
   outro: 'Outro',
 };
@@ -14,6 +15,7 @@ export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
 export const MEETING_TYPE_COLORS: Record<MeetingType, string> = {
   R1: '#3B82F6', // blue-500
   R2: '#10B981', // emerald-500
+  acompanhamento: '#3B82F6', // blue-500
   areas_cross: '#8B5CF6', // violet-500
   outro: '#6B7280', // gray-500
 };
@@ -148,6 +150,7 @@ export type EventReminderInput = z.input<typeof eventReminderSchema>;
 export interface CalendarMetrics {
   r1Count: number;
   r2Count: number;
+  acompanhamentoCount: number;
   areasCrossCount: number;
   totalMeetings: number;
   period: {
@@ -175,6 +178,11 @@ export function detectMeetingType(title: string): MeetingType {
   // R2: contém "r2" ou "2ª reunião" ou "segunda reunião"
   if (/\br2\b/.test(normalized) || /2[ªa]\s*reuni[aã]o/.test(normalized) || /segunda\s*reuni[aã]o/.test(normalized)) {
     return 'R2';
+  }
+
+  // Acompanhamento
+  if (/\bacompanhamento\b/.test(normalized) || /follow[\s-]?up/.test(normalized) || /revis[aã]o/.test(normalized)) {
+    return 'acompanhamento';
   }
   
   // Áreas Cross: contém "área(s) cross", "areas cross", "cross"
@@ -207,6 +215,7 @@ export function calculateMetrics(events: CalendarEvent[], startDate: Date, endDa
   
   let r1Count = 0;
   let r2Count = 0;
+  let acompanhamentoCount = 0;
   let areasCrossCount = 0;
   
   filteredEvents.forEach(event => {
@@ -218,6 +227,9 @@ export function calculateMetrics(events: CalendarEvent[], startDate: Date, endDa
       case 'R2':
         r2Count++;
         break;
+      case 'acompanhamento':
+        acompanhamentoCount++;
+        break;
       case 'areas_cross':
         areasCrossCount++;
         break;
@@ -227,6 +239,7 @@ export function calculateMetrics(events: CalendarEvent[], startDate: Date, endDa
   return {
     r1Count,
     r2Count,
+    acompanhamentoCount,
     areasCrossCount,
     totalMeetings: filteredEvents.length,
     period: {

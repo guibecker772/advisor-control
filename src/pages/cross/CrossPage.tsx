@@ -3,14 +3,14 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
 import { Plus } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { toastSuccess, toastError } from '../../lib/toast';
 
 import { useAuth } from '../../contexts/AuthContext';
 import { crossRepository, clienteRepository } from '../../services/repositories';
 import { crossSchema, type Cross, type CrossInput, type Cliente } from '../../domain/types';
 import { formatCurrency, isCrossConcluido } from '../../domain/calculations';
 import { DataTable, CurrencyCell, StatusBadge, ActionButtons } from '../../components/shared/DataTable';
-import { Modal, ConfirmDelete } from '../../components/shared/Modal';
+import { Modal, ConfirmDialog, PageHeader, PageSkeleton } from '../../components/ui';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
 
 const categoriaOptions = [
@@ -75,7 +75,7 @@ export default function CrossPage() {
         setClientes(clienteData);
       } catch (error) {
         console.error('Erro ao carregar dados:', error);
-        toast.error('Erro ao carregar dados');
+        toastError('Erro ao carregar dados');
       } finally {
         setLoading(false);
       }
@@ -143,19 +143,19 @@ export default function CrossPage() {
           setCrosses((prev) =>
             prev.map((c) => (c.id === selectedCross.id ? updated : c))
           );
-          toast.success('Cross atualizado com sucesso!');
+          toastSuccess('Cross atualizado com sucesso!');
         }
       } else {
         const created = await crossRepository.create(dataWithCliente, user.uid);
         setCrosses((prev) => [...prev, created]);
-        toast.success('Cross criado com sucesso!');
+        toastSuccess('Cross criado com sucesso!');
       }
 
       setModalOpen(false);
       reset();
     } catch (error) {
       console.error('Erro ao salvar cross:', error);
-      toast.error('Erro ao salvar cross');
+      toastError('Erro ao salvar cross');
     } finally {
       setSaving(false);
     }
@@ -168,12 +168,12 @@ export default function CrossPage() {
       setSaving(true);
       await crossRepository.delete(selectedCross.id, user.uid);
       setCrosses((prev) => prev.filter((c) => c.id !== selectedCross.id));
-      toast.success('Cross excluído com sucesso!');
+      toastSuccess('Cross excluído com sucesso!');
       setDeleteModalOpen(false);
       setSelectedCross(null);
     } catch (error) {
       console.error('Erro ao excluir cross:', error);
-      toast.error('Erro ao excluir cross');
+      toastError('Erro ao excluir cross');
     } finally {
       setSaving(false);
     }
@@ -209,7 +209,7 @@ export default function CrossPage() {
         cell: (info) => {
           const cat = info.getValue() as string;
           const option = categoriaOptions.find((c) => c.value === cat);
-          return <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded-full text-xs font-medium">{option?.label || cat}</span>;
+          return <span className="px-2 py-1 rounded-full text-xs font-medium" style={{ backgroundColor: 'var(--color-info-bg)', color: 'var(--color-info)' }}>{option?.label || cat}</span>;
         },
       },
       {
@@ -222,7 +222,7 @@ export default function CrossPage() {
         header: 'Realizado (R$)',
         cell: (info) => {
           const val = info.getValue() as number;
-          return <span className={val > 0 ? 'text-green-600 font-medium' : ''}><CurrencyCell value={val} /></span>;
+          return <span className={val > 0 ? 'font-medium' : ''} style={val > 0 ? { color: 'var(--color-success)' } : undefined}><CurrencyCell value={val} /></span>;
         },
       },
       {
@@ -231,10 +231,10 @@ export default function CrossPage() {
         cell: (info) => {
           const status = info.row.original.status;
           if (status !== 'concluido') {
-            return <span className="text-gray-400">—</span>;
+            return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
           }
           const comissao = info.row.original.comissao ?? 0;
-          return <span className="text-green-600 font-medium">{formatCurrency(Number.isFinite(comissao) ? comissao : 0)}</span>;
+          return <span className="font-medium" style={{ color: 'var(--color-success)' }}>{formatCurrency(Number.isFinite(comissao) ? comissao : 0)}</span>;
         },
       },
       {
@@ -325,82 +325,79 @@ export default function CrossPage() {
   }, [crossesFiltrados]);
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <PageSkeleton showKpis kpiCount={5} />;
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Cross Selling</h1>
-          <p className="text-gray-600">Vendas cruzadas de produtos — Pipe x Realizado</p>
-        </div>
-        <div className="flex items-center space-x-4">
-          <select value={mesFiltro} onChange={(e) => setMesFiltro(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
-            {Array.from({ length: 12 }, (_, i) => (<option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('pt-BR', { month: 'long' })}</option>))}
-          </select>
-          <select value={anoFiltro} onChange={(e) => setAnoFiltro(Number(e.target.value))} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
-            {[2024, 2025, 2026, 2027].map((a) => (<option key={a} value={a}>{a}</option>))}
-          </select>
-          <select value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
-            <option value="">Todas Áreas</option>
-            {categoriaOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
-          </select>
-          <select value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-md text-sm">
-            <option value="">Todos Status</option>
-            {statusOptions.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
-          </select>
-          <button
-            onClick={() => openModal()}
-            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Novo Cross
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Cross Selling"
+        subtitle="Vendas cruzadas de produtos — Pipe x Realizado"
+        actions={
+          <div className="flex items-center space-x-4">
+            <select value={mesFiltro} onChange={(e) => setMesFiltro(Number(e.target.value))} className="px-3 py-2 rounded-lg text-sm focus-gold" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
+              {Array.from({ length: 12 }, (_, i) => (<option key={i + 1} value={i + 1}>{new Date(2000, i).toLocaleString('pt-BR', { month: 'long' })}</option>))}
+            </select>
+            <select value={anoFiltro} onChange={(e) => setAnoFiltro(Number(e.target.value))} className="px-3 py-2 rounded-lg text-sm focus-gold" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
+              {[2024, 2025, 2026, 2027].map((a) => (<option key={a} value={a}>{a}</option>))}
+            </select>
+            <select value={categoriaFiltro} onChange={(e) => setCategoriaFiltro(e.target.value)} className="px-3 py-2 rounded-lg text-sm focus-gold" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
+              <option value="">Todas Áreas</option>
+              {categoriaOptions.map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}
+            </select>
+            <select value={statusFiltro} onChange={(e) => setStatusFiltro(e.target.value)} className="px-3 py-2 rounded-lg text-sm focus-gold" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}>
+              <option value="">Todos Status</option>
+              {statusOptions.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
+            </select>
+            <button
+              onClick={() => openModal()}
+              className="flex items-center px-4 py-2 rounded-lg hover:brightness-110 transition-colors"
+              style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Novo Cross
+            </button>
+          </div>
+        }
+      />
 
       {/* KPIs Totais */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Registros</p>
-          <p className="text-2xl font-bold text-gray-900">{totais.total}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-sm)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Registros</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>{totais.total}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Concluídos</p>
-          <p className="text-2xl font-bold text-green-600">{totais.concluidos}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-sm)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Concluídos</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>{totais.concluidos}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Total Pipe</p>
-          <p className="text-2xl font-bold text-blue-600">{formatCurrency(totais.pipeTotal)}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-sm)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Total Pipe</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-info)' }}>{formatCurrency(totais.pipeTotal)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Total Realizado</p>
-          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.realizedTotal)}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-sm)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Total Realizado</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(totais.realizedTotal)}</p>
         </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <p className="text-sm text-gray-600">Comissão Total (Fechados)</p>
-          <p className="text-2xl font-bold text-green-600">{formatCurrency(totais.comissaoTotal)}</p>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-sm)' }}>
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Comissão Total (Fechados)</p>
+          <p className="text-2xl font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(totais.comissaoTotal)}</p>
         </div>
       </div>
 
       {/* KPIs por Área */}
       {kpisPorArea.length > 0 && (
-        <div className="bg-white p-4 rounded-lg shadow">
-          <h3 className="font-semibold text-gray-900 mb-3">Pipe x Realizado por Área</h3>
+        <div className="p-4 rounded-xl" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)', boxShadow: 'var(--shadow-sm)' }}>
+          <h3 className="font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Pipe x Realizado por Área</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {kpisPorArea.map((area) => {
               const catLabel = categoriaOptions.find((c) => c.value === area.categoria)?.label || area.categoria;
               return (
-                <div key={area.categoria} className="border rounded-lg p-3 bg-gray-50">
-                  <p className="text-xs font-semibold text-indigo-700 uppercase">{catLabel}</p>
-                  <p className="text-sm text-gray-600">Pipe: <span className="font-bold text-blue-600">{formatCurrency(area.pipe)}</span></p>
-                  <p className="text-sm text-gray-600">Real: <span className="font-bold text-green-600">{formatCurrency(area.realized)}</span></p>
-                  <p className="text-xs text-gray-400">{area.count} registro(s)</p>
+                <div key={area.categoria} className="rounded-lg p-3" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border-subtle)' }}>
+                  <p className="text-xs font-semibold uppercase" style={{ color: 'var(--color-info)' }}>{catLabel}</p>
+                  <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Pipe: <span className="font-bold" style={{ color: 'var(--color-info)' }}>{formatCurrency(area.pipe)}</span></p>
+                  <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>Real: <span className="font-bold" style={{ color: 'var(--color-success)' }}>{formatCurrency(area.realized)}</span></p>
+                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{area.count} registro(s)</p>
                 </div>
               );
             })}
@@ -484,14 +481,16 @@ export default function CrossPage() {
             <button
               type="button"
               onClick={() => setModalOpen(false)}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 text-sm font-medium rounded-lg focus-gold"
+              style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm font-medium rounded-lg hover:brightness-110 disabled:opacity-50"
+              style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
             >
               {saving ? 'Salvando...' : selectedCross ? 'Atualizar' : 'Criar'}
             </button>
@@ -499,10 +498,14 @@ export default function CrossPage() {
         </form>
       </Modal>
 
-      <ConfirmDelete
+      <ConfirmDialog
         isOpen={deleteModalOpen}
         onClose={() => setDeleteModalOpen(false)}
         onConfirm={handleDelete}
+        title="Excluir Cross"
+        message="Tem certeza que deseja excluir este registro de cross selling? Esta ação não pode ser desfeita."
+        confirmText="Excluir"
+        variant="danger"
         loading={saving}
       />
     </div>

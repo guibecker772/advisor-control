@@ -1,33 +1,39 @@
+﻿import type { RefObject } from 'react';
 import { useLocation } from 'react-router-dom';
-import { User, Bell } from 'lucide-react';
+import { Bell, Search, User } from 'lucide-react';
+
 import { useAuth } from '../../../contexts/AuthContext';
 import { useNotifications } from '../../../contexts/NotificationContext';
 import ToolSwitcher from './ToolSwitcher';
 
-// Mapa de títulos por rota
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/clientes': 'Clientes',
   '/prospects': 'Prospects',
-  '/captacao': 'Captação',
+  '/captacao': 'Captacao',
   '/cross': 'Cross Selling',
   '/ofertas': 'Ofertas/Ativos',
   '/agendas': 'Agendas',
   '/metas': 'Metas',
-  '/salario': 'Salário',
+  '/salario': 'Salario',
   '/wealth': 'Private Wealth',
 };
 
 interface AppTopbarProps {
   sidebarCollapsed: boolean;
+  onOpenCommandPalette: () => void;
+  commandTriggerRef: RefObject<HTMLButtonElement | null>;
 }
 
-export default function AppTopbar({ sidebarCollapsed }: AppTopbarProps) {
+export default function AppTopbar({
+  sidebarCollapsed,
+  onOpenCommandPalette,
+  commandTriggerRef,
+}: AppTopbarProps) {
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
   const location = useLocation();
 
-  // Encontrar título da página atual
   const pageTitle = PAGE_TITLES[location.pathname] || 'Advisor Control';
 
   return (
@@ -39,34 +45,43 @@ export default function AppTopbar({ sidebarCollapsed }: AppTopbarProps) {
         borderBottom: '1px solid var(--topbar-border)',
       }}
     >
-      {/* Título da página */}
       <div>
-        <h1 
-          className="text-lg font-semibold"
-          style={{ color: 'var(--color-text)' }}
-        >
+        <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
           {pageTitle}
         </h1>
       </div>
 
-      {/* Ações do lado direito */}
-      <div className="flex items-center gap-4">
-        {/* Tool Switcher */}
+      <div className="flex items-center gap-3">
         <ToolSwitcher />
 
-        {/* Notificações */}
+        <button
+          ref={commandTriggerRef}
+          onClick={onOpenCommandPalette}
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-colors hover:bg-[var(--color-surface)]"
+          style={{
+            color: 'var(--color-text-secondary)',
+            border: '1px solid var(--color-border-subtle)',
+          }}
+          aria-label="Abrir comandos"
+          title="Abrir comandos"
+        >
+          <Search className="w-4 h-4" />
+          <span className="text-xs">⌘K</span>
+        </button>
+
         <button
           className="relative p-2 rounded-lg transition-colors hover:bg-[var(--color-surface)]"
           style={{ color: 'var(--color-text-secondary)' }}
-          title="Notificações"
+          title="Notificacoes"
+          aria-label="Notificacoes"
         >
           <Bell className="w-5 h-5" />
           {unreadCount > 0 && (
-            <span 
+            <span
               className="absolute top-1 right-1 w-4 h-4 rounded-full text-xs font-medium flex items-center justify-center"
-              style={{ 
+              style={{
                 backgroundColor: 'var(--color-danger)',
-                color: 'white',
+                color: 'var(--color-text-inverse)',
                 fontSize: '10px',
               }}
             >
@@ -75,28 +90,18 @@ export default function AppTopbar({ sidebarCollapsed }: AppTopbarProps) {
           )}
         </button>
 
-        {/* Usuário */}
-        <div 
-          className="flex items-center gap-3 pl-4 border-l"
-          style={{ borderColor: 'var(--color-border)' }}
-        >
+        <div className="flex items-center gap-3 pl-4 border-l" style={{ borderColor: 'var(--color-border)' }}>
           <div className="text-right hidden sm:block">
-            <p 
-              className="text-sm font-medium"
-              style={{ color: 'var(--color-text)' }}
-            >
+            <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
               {user?.displayName || 'Assessor'}
             </p>
-            <p 
-              className="text-xs"
-              style={{ color: 'var(--color-text-muted)' }}
-            >
+            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
               {user?.email}
             </p>
           </div>
-          <div 
+          <div
             className="w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ 
+            style={{
               backgroundColor: 'var(--color-surface-2)',
               color: 'var(--color-gold)',
             }}

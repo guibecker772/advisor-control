@@ -22,12 +22,12 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
     switch (type) {
       case 'reminder_60min':
       case 'reminder_30min':
-        return <Clock className="w-4 h-4 text-orange-500" />;
+        return <Clock className="w-4 h-4" style={{ color: 'var(--color-warning)' }} />;
       case 'event_created':
       case 'event_updated':
-        return <Calendar className="w-4 h-4 text-blue-500" />;
+        return <Calendar className="w-4 h-4" style={{ color: 'var(--color-info)' }} />;
       default:
-        return <Bell className="w-4 h-4 text-gray-500" />;
+        return <Bell className="w-4 h-4" style={{ color: 'var(--color-text-muted)' }} />;
     }
   };
 
@@ -41,14 +41,14 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+    <div className="rounded-xl shadow-sm overflow-hidden" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b bg-gray-50">
+      <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--color-border-subtle)', backgroundColor: 'var(--color-surface-2)' }}>
         <div className="flex items-center gap-2">
-          <Bell className="w-5 h-5 text-gray-600" />
-          <h3 className="font-semibold text-gray-900">Notificações</h3>
+          <Bell className="w-5 h-5" style={{ color: 'var(--color-text-secondary)' }} />
+          <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>Notificações</h3>
           {unreadCount > 0 && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full">
+            <span className="px-2 py-0.5 text-xs font-medium rounded-full" style={{ backgroundColor: 'var(--color-danger)', color: 'var(--color-text-inverse)' }}>
               {unreadCount}
             </span>
           )}
@@ -59,14 +59,16 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
             <>
               <button
                 onClick={markAllAsRead}
-                className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1.5 rounded-lg transition-colors hover-light"
+                style={{ color: 'var(--color-text-muted)' }}
                 title="Marcar todas como lidas"
               >
                 <CheckCheck className="w-4 h-4" />
               </button>
               <button
                 onClick={clearAll}
-                className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-1.5 rounded-lg transition-colors hover-light"
+                style={{ color: 'var(--color-text-muted)' }}
                 title="Limpar todas"
               >
                 <Trash2 className="w-4 h-4" />
@@ -75,7 +77,8 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
           )}
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 rounded-lg transition-colors hover-light"
+            style={{ color: 'var(--color-text-muted)' }}
           >
             <X className="w-4 h-4" />
           </button>
@@ -85,23 +88,27 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
       {/* Lista de Notificações */}
       <div className="max-h-80 overflow-y-auto">
         {loading ? (
-          <div className="p-8 text-center text-gray-500">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto" style={{ borderColor: 'var(--color-gold)' }} />
             <p className="mt-2 text-sm">Carregando...</p>
           </div>
         ) : notifications.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">
-            <Bell className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+          <div className="p-8 text-center" style={{ color: 'var(--color-text-muted)' }}>
+            <Bell className="w-12 h-12 mx-auto mb-2" style={{ color: 'var(--color-text-muted)' }} />
             <p className="text-sm">Nenhuma notificação</p>
           </div>
         ) : (
-          <div className="divide-y">
+          <div>
             {notifications.map((notification) => (
               <div
                 key={notification.id}
-                className={`p-4 hover:bg-gray-50 transition-colors ${
-                  !notification.read ? 'bg-blue-50/50' : ''
-                }`}
+                className="p-4 transition-colors"
+                style={{
+                  borderBottom: '1px solid var(--color-border-subtle)',
+                  backgroundColor: !notification.read ? 'var(--color-info-bg)' : 'transparent',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = !notification.read ? 'var(--color-info-bg)' : 'var(--row-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = !notification.read ? 'var(--color-info-bg)' : 'transparent'}
               >
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5">
@@ -110,25 +117,25 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
                   
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className={`text-sm ${!notification.read ? 'font-semibold' : ''} text-gray-900`}>
+                      <p className={`text-sm ${!notification.read ? 'font-semibold' : ''}`} style={{ color: 'var(--color-text)' }}>
                         {notification.title}
                       </p>
                       {!notification.read && (
-                        <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--color-info)' }} />
                       )}
                     </div>
                     
                     {notification.message && (
-                      <p className="text-sm text-gray-500 mt-0.5">{notification.message}</p>
+                      <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{notification.message}</p>
                     )}
                     
                     {notification.eventStart && (
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
                         Evento: {formatTime(notification.eventStart)}
                       </p>
                     )}
                     
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
                       {formatTime(notification.createdAt)}
                     </p>
                   </div>
@@ -137,7 +144,10 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
                     {!notification.read && (
                       <button
                         onClick={() => markAsRead(notification.id!)}
-                        className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                        className="p-1 rounded transition-colors"
+                        style={{ color: 'var(--color-text-muted)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-info)'; e.currentTarget.style.backgroundColor = 'var(--color-info-bg)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-muted)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
                         title="Marcar como lida"
                       >
                         <Check className="w-4 h-4" />
@@ -145,7 +155,10 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
                     )}
                     <button
                       onClick={() => deleteNotification(notification.id!)}
-                      className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                      className="p-1 rounded transition-colors"
+                      style={{ color: 'var(--color-text-muted)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--color-danger)'; e.currentTarget.style.backgroundColor = 'var(--color-danger-bg)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--color-text-muted)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
                       title="Excluir"
                     >
                       <X className="w-4 h-4" />

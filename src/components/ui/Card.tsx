@@ -55,6 +55,8 @@ interface KpiCardProps {
   icon?: ReactNode;
   trend?: 'up' | 'down' | 'neutral';
   trendValue?: string;
+  layout?: 'default' | 'wide';
+  hint?: string;
   accentColor?: 'gold' | 'success' | 'danger' | 'info' | 'warning';
   className?: string;
 }
@@ -66,6 +68,8 @@ export function KpiCard({
   icon,
   trend,
   trendValue,
+  layout = 'default',
+  hint,
   accentColor = 'gold',
   className = '',
 }: KpiCardProps) {
@@ -82,11 +86,14 @@ export function KpiCard({
     down: 'var(--color-danger)',
     neutral: 'var(--color-text-muted)',
   };
+  const trendSymbol = trend === 'up' ? '\u2191' : trend === 'down' ? '\u2193' : '\u2192';
+  const isWideLayout = layout === 'wide';
+  const hasIcon = Boolean(icon);
 
   return (
     <BaseCard className={className} padding="lg">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
+      <div className={isWideLayout ? 'flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between' : 'flex items-start justify-between'}>
+        <div className={isWideLayout ? `flex-1 min-w-0 ${hasIcon ? 'sm:pr-3' : ''}` : 'flex-1'}>
           <p 
             className="text-xs font-semibold uppercase tracking-wider mb-2"
             style={{ color: accentColors[accentColor] }}
@@ -94,7 +101,7 @@ export function KpiCard({
             {title}
           </p>
           <p 
-            className="text-2xl font-bold"
+            className={`text-2xl font-bold leading-tight ${isWideLayout ? 'mt-2 break-words' : ''}`}
             style={{ color: 'var(--color-text)' }}
           >
             {value}
@@ -107,18 +114,26 @@ export function KpiCard({
               {subtitle}
             </p>
           )}
+          {hint && (
+            <p
+              className="text-xs mt-2"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              {hint}
+            </p>
+          )}
           {trend && trendValue && (
             <p 
               className="text-sm mt-2 font-medium"
               style={{ color: trendColors[trend] }}
             >
-              {trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→'} {trendValue}
+              {trendSymbol} {trendValue}
             </p>
           )}
         </div>
         {icon && (
           <div 
-            className="w-10 h-10 rounded-lg flex items-center justify-center"
+            className={isWideLayout ? 'w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0' : 'w-10 h-10 rounded-lg flex items-center justify-center'}
             style={{ 
               backgroundColor: `${accentColors[accentColor]}15`,
               color: accentColors[accentColor],
