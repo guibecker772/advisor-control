@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   deriveLegacyReservationFlags,
+  isLiquidated,
   normalizeCompetenceMonth,
   normalizeOfferAssetClass,
   normalizeOfferAudience,
@@ -42,5 +43,14 @@ describe('offer normalization helpers', () => {
     expect(deriveLegacyReservationFlags('RESERVADA')).toEqual({ reservaEfetuada: true, reservaLiquidada: false });
     expect(deriveLegacyReservationFlags('LIQUIDADA')).toEqual({ reservaEfetuada: true, reservaLiquidada: true });
     expect(deriveLegacyReservationFlags('CANCELADA')).toEqual({ reservaEfetuada: false, reservaLiquidada: false });
+  });
+
+  it('applies unified liquidated rule with status/date and cancelation guard', () => {
+    expect(isLiquidated({ status: 'LIQUIDADA' })).toBe(true);
+    expect(isLiquidated({ status: 'PENDENTE', dataLiquidacao: '2026-02-10' })).toBe(true);
+    expect(isLiquidated({ status: 'RESERVADA', liquidationDate: '2026-02-10' })).toBe(true);
+    expect(isLiquidated({ status: 'CANCELADA', dataLiquidacao: '2026-02-10' })).toBe(false);
+    expect(isLiquidated({ status: 'CANCELADA', reservaLiquidada: true })).toBe(false);
+    expect(isLiquidated({ status: 'PENDENTE' })).toBe(false);
   });
 });

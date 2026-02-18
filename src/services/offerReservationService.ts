@@ -1,5 +1,6 @@
 import {
   deriveLegacyReservationFlags,
+  isLiquidated,
   normalizeCompetenceMonth,
   normalizeOfferAssetClass,
   normalizeOfferAudience,
@@ -104,12 +105,24 @@ function normalizeAllocations(value: unknown): OfferAllocation[] {
 }
 
 export function normalizeOfferForPersistence(input: OfferReservationInput): OfferReservationInput {
-  const status = normalizeOfferStatus(input.status, {
-    reservaEfetuada: input.reservaEfetuada,
-    reservaLiquidada: input.reservaLiquidada,
-  });
-  const legacyFlags = deriveLegacyReservationFlags(status);
+  const explicitStatus = normalizeOfferStatus(input.status);
+  const normalizedStatus = explicitStatus === 'CANCELADA'
+    ? explicitStatus
+    : normalizeOfferStatus(input.status, {
+      reservaEfetuada: input.reservaEfetuada,
+      reservaLiquidada: input.reservaLiquidada,
+    });
   const liquidationDate = normalizeLiquidationDate(input.liquidationDate ?? input.dataLiquidacao);
+  const status = explicitStatus === 'CANCELADA'
+    ? normalizedStatus
+    : isLiquidated({
+      status: normalizedStatus,
+      liquidationDate,
+      dataLiquidacao: liquidationDate,
+    })
+      ? 'LIQUIDADA'
+      : normalizedStatus;
+  const legacyFlags = deriveLegacyReservationFlags(status);
   const reserveDate = normalizeDateOnly(input.dataReserva);
   const reservationEndDate = normalizeDateOnly(input.reservationEndDate);
   const fallbackDate = input.dataReserva || input.createdAt || new Date().toISOString();
@@ -279,7 +292,12 @@ function isOfferLocked(offer: OfferReservation): boolean {
     reservaEfetuada: offer.reservaEfetuada,
     reservaLiquidada: offer.reservaLiquidada,
   });
-  return normalized === 'LIQUIDADA' || normalized === 'CANCELADA';
+  if (normalized === 'CANCELADA') return true;
+  return isLiquidated({
+    status: normalized,
+    liquidationDate: offer.liquidationDate,
+    dataLiquidacao: offer.dataLiquidacao,
+  });
 }
 
 export function applyReservationToOfferSnapshot(

@@ -122,6 +122,31 @@ export function normalizeOfferStatus(
   return statusMap[normalized] ?? 'PENDENTE';
 }
 
+type LiquidationLikeOffer = {
+  status?: unknown;
+  reservaEfetuada?: boolean;
+  reservaLiquidada?: boolean;
+  dataLiquidacao?: string | null;
+  liquidationDate?: string | null;
+};
+
+function hasText(value: string | null | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+export function isLiquidated(offer: LiquidationLikeOffer): boolean {
+  const explicitStatus = normalizeOfferStatus(offer.status);
+  if (explicitStatus === 'CANCELADA') return false;
+
+  const status = normalizeOfferStatus(offer.status, {
+    reservaEfetuada: offer.reservaEfetuada,
+    reservaLiquidada: offer.reservaLiquidada,
+  });
+  if (status === 'LIQUIDADA') return true;
+  if (status === 'CANCELADA') return false;
+  return hasText(offer.liquidationDate) || hasText(offer.dataLiquidacao);
+}
+
 export function deriveLegacyReservationFlags(status: OfferStatus): {
   reservaEfetuada: boolean;
   reservaLiquidada: boolean;

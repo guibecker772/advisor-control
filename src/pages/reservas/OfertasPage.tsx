@@ -32,6 +32,7 @@ import {
   getCurrentCompetenceMonth,
   getOfferAudienceLabel,
   getOfferStatusLabel,
+  isLiquidated,
   normalizeCompetenceMonth,
   normalizeOfferStatus,
 } from '../../domain/offers';
@@ -461,8 +462,11 @@ export default function OfertasPage() {
 
     ofertasFiltradas.forEach((o) => {
       const { revenueHouse, advisorGross, advisorNet } = calcOfferReservationTotals(o);
-      const status = o.status || 'PENDENTE';
-      if (status === 'LIQUIDADA') {
+      const status = normalizeOfferStatus(o.status, {
+        reservaEfetuada: o.reservaEfetuada,
+        reservaLiquidada: o.reservaLiquidada,
+      });
+      if (isLiquidated(o)) {
         receitaOfertas += revenueHouse;
         repasseAssessor += advisorGross;
         liquidoAssessor += advisorNet;
@@ -2274,4 +2278,3 @@ function OfertaDetalhesModal({
     </div>
   );
 }
-
