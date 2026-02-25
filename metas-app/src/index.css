@@ -1,0 +1,538 @@
+@import "tailwindcss";
+@import "./theme/tokens.css";
+
+/* ── Tailwind v4 theme mapping (PW-compatible semantic aliases) ── */
+@theme inline {
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-text);
+  --color-card: var(--color-surface);
+  --color-card-foreground: var(--color-text);
+  --color-popover: var(--color-surface);
+  --color-popover-foreground: var(--color-text);
+  --color-muted: var(--color-surface-2);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-primary: var(--color-gold);
+  --color-primary-foreground: var(--color-text-inverse);
+  --color-secondary: var(--color-surface-2);
+  --color-secondary-foreground: var(--color-text);
+  --color-accent: var(--color-gold-bg);
+  --color-accent-foreground: var(--color-gold);
+  --color-destructive: var(--color-danger);
+  --color-sidebar: var(--sidebar-bg);
+  --color-sidebar-foreground: var(--color-text);
+  --color-sidebar-border-clr: var(--sidebar-border);
+  --color-divider: var(--color-border-subtle);
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ===========================================
+   TEMA ESCURO GLOBAL - ADVISOR CONTROL
+   Overrides para bg-white e cores claras
+   =========================================== */
+
+/* ===== BODY/HTML BASE ===== */
+html, body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== OVERRIDE GLOBAL: bg-white → tema escuro ===== */
+.bg-white {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+}
+
+/* ===== OVERRIDE: text-gray-XXX para tema escuro ===== */
+.text-gray-900, .text-gray-800, .text-gray-700 {
+  color: var(--color-text) !important;
+}
+.text-gray-600, .text-gray-500 {
+  color: var(--color-text-secondary) !important;
+}
+.text-gray-400, .text-gray-300 {
+  color: var(--color-text-muted) !important;
+}
+
+/* ===== OVERRIDE: bg-gray-XXX para tema escuro ===== */
+.bg-gray-50, .bg-gray-100 {
+  background-color: var(--color-surface-2) !important;
+}
+.bg-gray-200, .bg-gray-300 {
+  background-color: var(--color-surface-3) !important;
+}
+
+/* ===== OVERRIDE: borders ===== */
+.border-gray-200, .border-gray-300 {
+  border-color: var(--color-border) !important;
+}
+
+/* ===== OVERRIDE: divide colors ===== */
+.divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--color-border) !important;
+}
+
+/* ===== OVERRIDE: HOVER STATES - tema escuro sutil ===== */
+/* Hovers cinza claro → sutil escuro */
+.hover\:bg-gray-50:hover,
+.hover\:bg-gray-100:hover,
+.hover\:bg-gray-200:hover {
+  background-color: var(--hover-light) !important;
+}
+
+/* Hovers coloridos claros → versões escuras sutis */
+.hover\:bg-blue-50:hover {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+.hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+.hover\:bg-green-50:hover {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+.hover\:bg-teal-50:hover {
+  background-color: rgba(20, 184, 166, 0.12) !important;
+}
+.hover\:bg-orange-50:hover {
+  background-color: rgba(249, 115, 22, 0.12) !important;
+}
+.hover\:bg-purple-50:hover {
+  background-color: rgba(168, 85, 247, 0.12) !important;
+}
+.hover\:bg-yellow-50:hover {
+  background-color: rgba(234, 179, 8, 0.12) !important;
+}
+
+/* Badges com hover */
+.hover\:bg-orange-200:hover {
+  background-color: rgba(249, 115, 22, 0.20) !important;
+}
+
+/* ===== OVERRIDE: shadows para tema escuro ===== */
+.shadow, .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl {
+  --tw-shadow-color: rgba(0, 0, 0, 0.4);
+}
+
+/* ===== OVERRIDE: ring colors ===== */
+.ring-gray-200, .ring-gray-300 {
+  --tw-ring-color: var(--color-border) !important;
+}
+
+/* ===== OVERRIDE: placeholder colors ===== */
+.placeholder-gray-400::placeholder, .placeholder-gray-500::placeholder {
+  color: var(--color-text-muted) !important;
+}
+
+/* Dark Theme Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface-3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Custom focus styles - Dourado */
+@layer base {
+  *:focus {
+    @apply outline-none;
+  }
+  
+  *:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-gold);
+  }
+  
+  /* Input focus override */
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--color-gold) !important;
+    box-shadow: 0 0 0 1px var(--color-gold);
+  }
+  
+  /* ===== INPUTS/SELECTS NATIVOS - Dark Theme ===== */
+  input, select, textarea {
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    border-radius: 0.5rem;
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--color-text-muted);
+  }
+  
+  /* Select dropdown arrow color fix */
+  select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239BA5B8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  select option {
+    background-color: var(--color-surface-2);
+    color: var(--color-text);
+  }
+}
+
+/* Table styles - Dark Theme */
+@layer components {
+  .table-container {
+    @apply overflow-x-auto rounded-lg;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-subtle);
+  }
+  
+  .table-header {
+    @apply text-left text-xs font-medium uppercase tracking-wider;
+    background-color: var(--color-surface-2);
+    color: var(--color-text-muted);
+  }
+  
+  .table-cell {
+    @apply px-6 py-4 whitespace-nowrap text-sm;
+    color: var(--color-text);
+  }
+  
+  .table-row {
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+  
+  .table-row:hover {
+    background-color: var(--row-hover);
+  }
+  
+  .table-row.selected {
+    background-color: var(--row-selected);
+  }
+}
+
+/* ===== OVERRIDE GLOBAL: tr hover em tabelas ===== */
+table tbody tr:hover,
+.bg-white tbody tr:hover {
+  background-color: var(--row-hover) !important;
+}
+
+/* Card styles - Dark Theme */
+@layer components {
+  .card {
+    @apply rounded-xl p-6;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-subtle);
+  }
+  
+  .card-header {
+    @apply text-lg font-semibold mb-4;
+    color: var(--color-text);
+  }
+}
+
+/* Button variants - Dark Theme */
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition-colors focus:outline-none;
+  }
+  
+  .btn-primary {
+    background-color: var(--color-gold);
+    color: var(--color-text-inverse);
+  }
+  .btn-primary:hover {
+    background-color: var(--color-gold-hover);
+  }
+  .btn-primary:focus-visible {
+    box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-gold);
+  }
+  
+  .btn-secondary {
+    background-color: var(--color-surface-2);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+  }
+  .btn-secondary:hover {
+    background-color: var(--color-surface-3);
+  }
+  
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700;
+    color: white;
+  }
+  
+  .btn-success {
+    @apply bg-green-600 hover:bg-green-700;
+    color: white;
+  }
+}
+
+/* Form styles - Dark Theme */
+@layer components {
+  .form-input {
+    @apply w-full px-3 py-2 rounded-md shadow-sm;
+    background-color: var(--color-surface-2);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+  }
+  .form-input::placeholder {
+    color: var(--color-text-muted);
+  }
+  .form-input:focus {
+    border-color: var(--color-gold);
+    box-shadow: 0 0 0 1px var(--color-gold);
+    outline: none;
+  }
+  
+  .form-label {
+    @apply block text-sm font-medium mb-1;
+    color: var(--color-text-secondary);
+  }
+  
+  .form-error {
+    @apply text-sm mt-1;
+    color: var(--color-danger);
+  }
+}
+
+/* Status badge colors - Dark Theme (mais suaves) */
+@layer components {
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+  
+  .badge-green {
+    background-color: var(--color-success-bg);
+    color: var(--color-success);
+  }
+  
+  .badge-yellow {
+    background-color: var(--color-warning-bg);
+    color: var(--color-warning);
+  }
+  
+  .badge-red {
+    background-color: var(--color-danger-bg);
+    color: var(--color-danger);
+  }
+  
+  .badge-blue {
+    background-color: var(--color-info-bg);
+    color: var(--color-info);
+  }
+  
+  .badge-gray {
+    background-color: var(--color-surface-2);
+    color: var(--color-text-secondary);
+  }
+  
+  .badge-purple {
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #A78BFA;
+  }
+}
+
+/* Animation */
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-in-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    background: white;
+  }
+}
+
+/* FullCalendar Custom Styles - Dark Theme */
+.fc-custom {
+  --fc-border-color: var(--color-border);
+  --fc-today-bg-color: var(--color-gold-bg);
+  --fc-event-border-color: transparent;
+  --fc-now-indicator-color: var(--color-danger);
+  --fc-page-bg-color: var(--color-surface);
+  --fc-neutral-bg-color: var(--color-surface-2);
+  --fc-list-event-hover-bg-color: var(--color-surface-hover);
+}
+
+.fc-custom .fc-col-header-cell {
+  background-color: var(--color-surface-2);
+  color: var(--color-text-secondary);
+  @apply py-3 text-sm font-medium;
+}
+
+.fc-custom .fc-daygrid-day-number {
+  color: var(--color-text);
+  @apply text-sm p-2;
+}
+
+.fc-custom .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  background-color: var(--color-gold);
+  color: var(--color-text-inverse);
+  @apply rounded-full w-7 h-7 flex items-center justify-center;
+}
+
+.fc-custom .fc-event {
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text);
+  box-shadow: none;
+  @apply rounded-lg text-xs font-medium cursor-pointer;
+}
+
+.fc-custom .fc-event .fc-event-main {
+  padding: 0;
+}
+
+.fc-custom .ac-event-pill {
+  @apply px-1.5 py-1 flex flex-col gap-1;
+}
+
+.fc-custom .ac-event-main {
+  @apply flex items-center gap-1 min-w-0;
+}
+
+.fc-custom .ac-event-time {
+  color: var(--color-text-muted);
+  @apply text-[11px] font-medium shrink-0;
+}
+
+.fc-custom .ac-event-title {
+  color: var(--color-text);
+  @apply text-[11px] font-semibold truncate;
+}
+
+.fc-custom .ac-event-chip-row {
+  @apply flex items-center gap-1 min-w-0;
+}
+
+.fc-custom .ac-event-chip {
+  @apply px-1.5 py-0.5 rounded-full text-[10px] font-medium truncate;
+}
+
+.fc-custom .ac-event-chip--neutral {
+  background-color: var(--color-surface-3);
+  color: var(--color-text-secondary);
+}
+
+.fc-custom .ac-event-chip--success {
+  background-color: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.fc-custom .ac-event-chip--warning {
+  background-color: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.fc-custom .ac-event-chip--danger {
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.fc-custom .ac-event-chip--info {
+  background-color: var(--color-info-bg);
+  color: var(--color-info);
+}
+
+.fc-custom .fc-event:hover {
+  @apply opacity-90;
+}
+
+.fc-custom .fc-timegrid-slot {
+  @apply h-12;
+}
+
+.fc-custom .fc-timegrid-slot-label {
+  color: var(--color-text-muted);
+  @apply text-xs;
+}
+
+.fc-custom .fc-daygrid-more-link {
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-secondary);
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+}
+
+.fc-custom .fc-daygrid-more-link:hover {
+  background-color: var(--color-gold-bg);
+  color: var(--color-gold);
+  text-decoration: none;
+}
+
+.fc-custom .fc-highlight {
+  background-color: var(--color-gold-bg);
+}
+
+.fc-custom .fc-scrollgrid {
+  @apply border-0;
+}
+
+.fc-custom .fc-scrollgrid-section-header > th {
+  @apply border-0;
+}
+
+.fc-custom .fc-timegrid-now-indicator-line {
+  border-color: var(--color-danger);
+  @apply border-t-2;
+}
+
+.fc-custom .fc-timegrid-now-indicator-arrow {
+  border-color: var(--color-danger);
+}
+
+/* FullCalendar table cells */
+.fc-custom .fc-daygrid-day {
+  background-color: var(--color-surface);
+}
+
+.fc-custom .fc-daygrid-day:hover {
+  background-color: var(--color-surface-hover);
+}
+
+.fc-custom .fc-day-other .fc-daygrid-day-number {
+  color: var(--color-text-muted);
+}
