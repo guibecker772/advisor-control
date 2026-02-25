@@ -1,0 +1,246 @@
+/* ===========================================
+   ADVISOR CONTROL - DESIGN TOKENS
+   Visual "Private Wealth" - Elegante e Suave
+   =========================================== */
+
+:root {
+  /* ===== CORES BASE ===== */
+  
+  /* Backgrounds - Cinza escuro MODERADO (não preto) */
+  --color-bg: #1C2128;           /* Fundo principal - cinza escuro suave */
+  --color-bg-elevated: #232A35;  /* Fundo elevado */
+  
+  /* Surfaces - Cards/painéis em cinza SUTIL mais claro */
+  --color-surface: #2A323E;      /* Cards principais */
+  --color-surface-2: #313A48;    /* Headers, inputs, hover */
+  --color-surface-3: #3A4454;    /* Terceiro nível */
+  --color-surface-hover: rgba(255, 255, 255, 0.04);  /* Hover SUTIL - não mais claro que cards */
+  
+  /* ===== HOVER STATES - SUTIS ===== */
+  --hover-subtle: rgba(255, 255, 255, 0.03);   /* Hover muito sutil */
+  --hover-light: rgba(255, 255, 255, 0.05);    /* Hover padrão */
+  --hover-medium: rgba(255, 255, 255, 0.08);   /* Hover mais visível */
+  --row-hover: rgba(255, 255, 255, 0.04);      /* Linhas de tabela */
+  --row-selected: rgba(200, 162, 74, 0.12);    /* Linha selecionada (dourado) */
+  
+  /* Borders - DISCRETAS, quase imperceptíveis */
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-active: var(--color-gold);
+  
+  /* Text - Off-white (EVITAR branco puro) */
+  --color-text: #E4E8EF;         /* Texto principal - off-white suave */
+  --color-text-secondary: #9BA5B8;
+  --color-text-muted: #6B7689;
+  --color-text-inverse: #1C2128;
+  
+  /* ===== CORES DE DESTAQUE - DOURADO (Premium) ===== */
+  --color-gold: #C8A24A;
+  --color-gold-hover: #D6B35A;
+  --color-gold-muted: #A08838;
+  --color-gold-bg: rgba(200, 162, 74, 0.12);
+  --color-gold-bg-hover: rgba(200, 162, 74, 0.18);
+  
+  /* ===== CORES SEMÂNTICAS ===== */
+  --color-success: #22C55E;       /* Verde mais vibrante para contraste */
+  --color-success-bg: rgba(34, 197, 94, 0.15);
+  --color-warning: #F59E0B;
+  --color-warning-bg: rgba(245, 158, 11, 0.15);
+  --color-danger: #EF4444;
+  --color-danger-bg: rgba(239, 68, 68, 0.15);
+  --color-info: #3B82F6;
+  --color-info-bg: rgba(59, 130, 246, 0.15);
+  
+  /* ===== SIDEBAR ===== */
+  --sidebar-width: 240px;
+  --sidebar-width-collapsed: 72px;
+  --sidebar-bg: #1A2029;         /* Sidebar um pouco mais escura */
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-item-hover: var(--color-surface);
+  --sidebar-item-active-bg: rgba(200, 162, 74, 0.12);
+  --sidebar-item-active-border: var(--color-gold);
+  
+  /* ===== TOPBAR ===== */
+  --topbar-height: 64px;
+  --topbar-bg: var(--color-bg-elevated);
+  --topbar-border: rgba(255, 255, 255, 0.06);
+  
+  /* ===== TIPOGRAFIA ===== */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  
+  /* Font Sizes */
+  --text-xs: 0.75rem;    /* 12px */
+  --text-sm: 0.875rem;   /* 14px */
+  --text-base: 1rem;     /* 16px */
+  --text-lg: 1.125rem;   /* 18px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.5rem;    /* 24px */
+  --text-3xl: 1.875rem;  /* 30px */
+  --text-4xl: 2.25rem;   /* 36px */
+  
+  /* Font Weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  
+  /* ===== ESPAÇAMENTO ===== */
+  --spacing-1: 0.25rem;  /* 4px */
+  --spacing-2: 0.5rem;   /* 8px */
+  --spacing-3: 0.75rem;  /* 12px */
+  --spacing-4: 1rem;     /* 16px */
+  --spacing-5: 1.25rem;  /* 20px */
+  --spacing-6: 1.5rem;   /* 24px */
+  --spacing-8: 2rem;     /* 32px */
+  --spacing-10: 2.5rem;  /* 40px */
+  --spacing-12: 3rem;    /* 48px */
+  
+  /* ===== BORDAS E SOMBRAS ===== */
+  --radius-sm: 0.25rem;  /* 4px */
+  --radius-md: 0.5rem;   /* 8px */
+  --radius-lg: 0.75rem;  /* 12px */
+  --radius-xl: 1rem;     /* 16px */
+  --radius-full: 9999px;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.2);
+  --shadow-gold: 0 0 0 2px var(--color-gold);
+  
+  /* ===== TRANSIÇÕES ===== */
+  --transition-fast: 150ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 300ms ease;
+  
+  /* ===== Z-INDEX ===== */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal-backdrop: 300;
+  --z-modal: 400;
+  --z-tooltip: 500;
+  --z-toast: 600;
+
+  /* ===== CHART / PROGRESS TOKENS ===== */
+  --chart-1: #3B82F6;
+  --chart-2: #22C55E;
+  --chart-3: #F59E0B;
+  --chart-4: #EF4444;
+  --chart-5: #8B5CF6;
+  --chart-grid: rgba(255, 255, 255, 0.06);
+  --chart-axis: var(--color-text-muted);
+  --chart-tooltip-bg: var(--color-surface);
+  --chart-tooltip-border: var(--color-border);
+
+  /* Progress bar track */
+  --progress-track: var(--color-surface-3);
+
+  /* Badge purple */
+  --badge-purple: #A78BFA;
+}
+
+/* ===== DARK THEME UTILITIES (Tailwind-like) ===== */
+.bg-app { background-color: var(--color-bg); }
+.bg-elevated { background-color: var(--color-bg-elevated); }
+.bg-surface { background-color: var(--color-surface); }
+.bg-surface-2 { background-color: var(--color-surface-2); }
+.bg-surface-3 { background-color: var(--color-surface-3); }
+
+.text-primary { color: var(--color-text); }
+.text-secondary { color: var(--color-text-secondary); }
+.text-muted { color: var(--color-text-muted); }
+.text-gold { color: var(--color-gold); }
+
+.border-default { border-color: var(--color-border); }
+.border-subtle { border-color: var(--color-border-subtle); }
+.border-gold { border-color: var(--color-gold); }
+
+/* ===== HOVER UTILITIES ===== */
+.hover-subtle:hover { background-color: var(--hover-subtle); }
+.hover-light:hover { background-color: var(--hover-light); }
+.hover-medium:hover { background-color: var(--hover-medium); }
+.hover-row:hover { background-color: var(--row-hover); }
+
+/* Focus ring dourado para acessibilidade */
+.focus-gold:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-gold);
+}
+
+/* ===========================================================
+   LIGHT THEME OVERRIDES
+   Dark é default (:root). Light ativa via html.light.
+   =========================================================== */
+html.light {
+  /* ===== BACKGROUNDS ===== */
+  --color-bg: #FFFFFF;
+  --color-bg-elevated: #F8FAFC;
+
+  /* ===== SURFACES ===== */
+  --color-surface: #FFFFFF;
+  --color-surface-2: #F1F5F9;
+  --color-surface-3: #E2E8F0;
+  --color-surface-hover: rgba(0, 0, 0, 0.03);
+
+  /* ===== HOVERS ===== */
+  --hover-subtle: rgba(0, 0, 0, 0.02);
+  --hover-light: rgba(0, 0, 0, 0.04);
+  --hover-medium: rgba(0, 0, 0, 0.06);
+  --row-hover: rgba(0, 0, 0, 0.02);
+  --row-selected: rgba(180, 140, 50, 0.08);
+
+  /* ===== BORDERS ===== */
+  --color-border: rgba(0, 0, 0, 0.10);
+  --color-border-subtle: rgba(0, 0, 0, 0.06);
+  --color-border-active: var(--color-gold);
+
+  /* ===== TEXT ===== */
+  --color-text: #1A1D23;
+  --color-text-secondary: #4B5563;
+  --color-text-muted: #9CA3AF;
+  --color-text-inverse: #FFFFFF;
+
+  /* ===== GOLD (mais escuro p/ contraste em fundo claro) ===== */
+  --color-gold: #A68523;
+  --color-gold-hover: #8E7118;
+  --color-gold-muted: #7A6115;
+  --color-gold-bg: rgba(166, 133, 35, 0.08);
+  --color-gold-bg-hover: rgba(166, 133, 35, 0.14);
+
+  /* ===== SEMÂNTICAS (bg mais leve) ===== */
+  --color-success-bg: rgba(34, 197, 94, 0.10);
+  --color-warning-bg: rgba(245, 158, 11, 0.10);
+  --color-danger-bg: rgba(239, 68, 68, 0.10);
+  --color-info-bg: rgba(59, 130, 246, 0.10);
+
+  /* ===== SIDEBAR ===== */
+  --sidebar-bg: #F8FAFC;
+  --sidebar-border: rgba(0, 0, 0, 0.08);
+  --sidebar-item-hover: rgba(0, 0, 0, 0.04);
+  --sidebar-item-active-bg: rgba(166, 133, 35, 0.10);
+  --sidebar-item-active-border: var(--color-gold);
+
+  /* ===== TOPBAR ===== */
+  --topbar-bg: #FFFFFF;
+  --topbar-border: rgba(0, 0, 0, 0.08);
+
+  /* ===== SHADOWS (leves) ===== */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-gold: 0 0 0 2px var(--color-gold);
+
+  /* ===== CHART / PROGRESS TOKENS (light) ===== */
+  --chart-1: #2563EB;
+  --chart-2: #16A34A;
+  --chart-3: #D97706;
+  --chart-4: #DC2626;
+  --chart-5: #7C3AED;
+  --chart-grid: rgba(0, 0, 0, 0.06);
+  --chart-axis: var(--color-text-muted);
+  --chart-tooltip-bg: var(--color-surface);
+  --chart-tooltip-border: var(--color-border);
+
+  --progress-track: var(--color-surface-3);
+  --badge-purple: #7C3AED;
+}
