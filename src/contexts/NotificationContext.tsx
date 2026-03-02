@@ -31,15 +31,22 @@ interface NotificationProviderProps {
 }
 
 export function NotificationProvider({ children }: NotificationProviderProps) {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const checkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const ownerUid = user?.uid || 'dev';
+  const ownerUid = user?.uid;
 
   // Carregar notificações
   const loadNotifications = useCallback(async () => {
+    if (authLoading) return;
+    if (!ownerUid) {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       const all = await notificationRepository.getAll(ownerUid);
       // Ordenar por data de criação (mais recentes primeiro)
@@ -54,10 +61,13 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     } finally {
       setLoading(false);
     }
-  }, [ownerUid]);
+  }, [authLoading, ownerUid]);
 
   // Verificar e criar lembretes para eventos futuros
   const checkAndCreateReminders = useCallback(async () => {
+    if (authLoading) return;
+    if (!ownerUid) return;
+
     try {
       const events = await calendarEventRepository.getAll(ownerUid);
       const existingReminders = await eventReminderRepository.getAll(ownerUid);
@@ -101,10 +111,13 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     } catch (error) {
       console.error('Erro ao criar lembretes:', error);
     }
-  }, [ownerUid]);
+  }, [authLoading, ownerUid]);
 
   // Disparar notificações para lembretes que chegaram no horário
   const triggerDueReminders = useCallback(async () => {
+    if (authLoading) return;
+    if (!ownerUid) return;
+
     try {
       const reminders = await eventReminderRepository.getAll(ownerUid);
       const events = await calendarEventRepository.getAll(ownerUid);
@@ -153,11 +166,20 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     } catch (error) {
       console.error('Erro ao disparar lembretes:', error);
     }
-  }, [ownerUid, loadNotifications]);
+  }, [authLoading, ownerUid, loadNotifications]);
 
   // Inicialização e polling
   useEffect(() => {
-    if (!ownerUid) return;
+    if (authLoading) {
+      setLoading(true);
+      return;
+    }
+
+    if (!ownerUid) {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
     
     loadNotifications();
     checkAndCreateReminders();
@@ -179,10 +201,12 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       }
       clearTimeout(initialCheck);
     };
-  }, [ownerUid, loadNotifications, checkAndCreateReminders, triggerDueReminders]);
+  }, [authLoading, ownerUid, loadNotifications, checkAndCreateReminders, triggerDueReminders]);
 
   // Marcar como lida
   const markAsRead = useCallback(async (id: string) => {
+    if (!ownerUid) return;
+
     try {
       await notificationRepository.update(id, {
         read: true,
@@ -198,6 +222,8 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
   // Marcar todas como lidas
   const markAllAsRead = useCallback(async () => {
+    if (!ownerUid) return;
+
     try {
       const now = new Date().toISOString();
       const unread = notifications.filter(n => !n.read);
@@ -212,6 +238,8 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
   // Deletar notificação
   const deleteNotification = useCallback(async (id: string) => {
+    if (!ownerUid) return;
+
     try {
       await notificationRepository.delete(id, ownerUid);
       setNotifications(prev => prev.filter(n => n.id !== id));
@@ -222,6 +250,8 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
   // Limpar todas
   const clearAll = useCallback(async () => {
+    if (!ownerUid) return;
+
     try {
       await Promise.all(notifications.map(n => notificationRepository.delete(n.id!, ownerUid)));
       setNotifications([]);

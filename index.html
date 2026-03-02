@@ -19,6 +19,13 @@
     <!-- Anti-FOUC: aplica tema ANTES do primeiro paint -->
     <script>
       (function () {
+        var isLoginRoute = window.location.pathname === '/login';
+        if (isLoginRoute) {
+          document.documentElement.classList.remove('light');
+          document.documentElement.classList.add('dark');
+          document.documentElement.setAttribute('data-theme', 'dark');
+          return;
+        }
         var t = localStorage.getItem('theme');
         if (t !== 'dark' && t !== 'light' && t !== 'system') t = 'system';
         var isLight =

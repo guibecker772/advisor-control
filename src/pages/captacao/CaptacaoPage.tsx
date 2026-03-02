@@ -10,9 +10,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { captacaoLancamentoRepository, clienteRepository, prospectRepository } from '../../services/repositories';
 import { captacaoLancamentoSchema, type CaptacaoLancamento, type CaptacaoLancamentoInput, type Cliente, type Prospect } from '../../domain/types';
 import { formatCurrency } from '../../domain/calculations';
+import { getCaptacaoResumoPeriodo } from '../../domain/calculations/captacaoPeriodo';
 import { DataTable, CurrencyCell, ActionButtons } from '../../components/shared/DataTable';
 import { Modal, ConfirmDialog, PageHeader, PageSkeleton } from '../../components/ui';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
+import ClientSelect from '../../components/clientes/ClientSelect';
 
 const direcaoOptions = [
   { value: 'entrada', label: 'Entrada' },
@@ -53,7 +55,8 @@ const origemLabels: Record<string, string> = {
 };
 
 export default function CaptacaoPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [lancamentos, setLancamentos] = useState<CaptacaoLancamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [prospects, setProspects] = useState<Prospect[]>([]);
@@ -84,17 +87,37 @@ export default function CaptacaoPage() {
   });
 
   const origemWatch = watch('origem');
+  const selectedClientId = watch('referenciaId') || '';
+  const clientSelectOptions = useMemo(
+    () => clientes
+      .filter((cliente) => Boolean(cliente.id))
+      .map((cliente) => ({
+        value: cliente.id || '',
+        label: cliente.nome,
+        hint: [cliente.cpfCnpj, cliente.codigoConta, cliente.email, cliente.telefone].filter(Boolean).join(' | '),
+        searchText: [cliente.nome, cliente.cpfCnpj, cliente.codigoConta, cliente.email, cliente.telefone].filter(Boolean).join(' '),
+      })),
+    [clientes],
+  );
 
   const loadData = useCallback(async () => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setLancamentos([]);
+      setClientes([]);
+      setProspects([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const [lancData, clienteData, prospectData] = await Promise.all([
-        captacaoLancamentoRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
-        clienteRepository.getAll(user.uid),
-        prospectRepository.getAll(user.uid),
+        captacaoLancamentoRepository.getAll(ownerUid),
+        clienteRepository.getAll(ownerUid),
+        prospectRepository.getAll(ownerUid),
       ]);
-      setLancamentos(lancData);
+      const resumoPeriodo = getCaptacaoResumoPeriodo(lancData, mesFiltro, anoFiltro);
+      setLancamentos(resumoPeriodo.lancamentosPeriodo);
       setClientes(clienteData);
       setProspects(prospectData);
     } catch (error) {
@@ -103,17 +126,19 @@ export default function CaptacaoPage() {
     } finally {
       setLoading(false);
     }
-  }, [anoFiltro, mesFiltro, user]);
+  }, [anoFiltro, authLoading, mesFiltro, ownerUid]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadData();
-  }, [loadData]);
+  }, [authLoading, loadData]);
 
   useEffect(() => {
+    if (authLoading || !ownerUid) return;
     return subscribeDataInvalidation(['captacao', 'prospects', 'clients'], async () => {
       await loadData();
     });
-  }, [loadData]);
+  }, [authLoading, loadData, ownerUid]);
 
   const openModal = (lanc?: CaptacaoLancamento) => {
     if (lanc) {
@@ -139,7 +164,7 @@ export default function CaptacaoPage() {
   // Função para atualizar custódia do cliente (Etapa 7)
   // delta > 0 = soma na custódia, delta < 0 = subtrai
   const atualizarCustodiaCliente = async (clienteId: string, delta: number, bucket: 'onshore' | 'offshore') => {
-    if (!user || !clienteId) return;
+    if (!ownerUid || !clienteId) return;
     const cliente = clientes.find(c => c.id === clienteId);
     if (!cliente) return;
 
@@ -155,7 +180,7 @@ export default function CaptacaoPage() {
       custodiaOnShore: novoOnShore,
       custodiaOffShore: novoOffShore,
       custodiaAtual: novaCustodiaAtual,
-    }, user.uid);
+    }, ownerUid);
 
     // Atualizar estado local de clientes
     setClientes(prev => prev.map(c => c.id === clienteId ? { ...c, custodiaOnShore: novoOnShore, custodiaOffShore: novoOffShore, custodiaAtual: novaCustodiaAtual } : c));
@@ -169,7 +194,7 @@ export default function CaptacaoPage() {
   const bucketWatch = watch('bucket');
 
   const onSubmit = async (data: CaptacaoLancamentoInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     // Validar bucket obrigatório para origem=cliente
     if (data.origem === 'cliente' && !data.bucket) {
@@ -196,9 +221,8 @@ export default function CaptacaoPage() {
           ? calcularDelta(parsed.direcao, parsed.valor)
           : 0;
 
-        const updated = await captacaoLancamentoRepository.update(selectedLancamento.id, parsed, user.uid);
+        const updated = await captacaoLancamentoRepository.update(selectedLancamento.id, parsed, ownerUid);
         if (updated) {
-          setLancamentos((prev) => prev.map((l) => (l.id === selectedLancamento.id ? updated : l)));
 
           // Reverter custódia antiga (se havia cliente vinculado)
           if (antigo.origem === 'cliente' && antigo.referenciaId && antigo.bucket) {
@@ -209,12 +233,12 @@ export default function CaptacaoPage() {
             await atualizarCustodiaCliente(parsed.referenciaId, novoDelta, parsed.bucket);
           }
 
+          await loadData();
           toastSuccess('Lançamento atualizado!');
         }
       } else {
         // CRIAÇÃO: aplicar delta na custódia do cliente
-        const created = await captacaoLancamentoRepository.create(parsed, user.uid);
-        setLancamentos((prev) => [...prev, created]);
+        await captacaoLancamentoRepository.create(parsed, ownerUid);
 
         // Atualizar custódia do cliente SOMENTE se origem=cliente
         if (parsed.origem === 'cliente' && parsed.referenciaId && parsed.bucket) {
@@ -222,6 +246,7 @@ export default function CaptacaoPage() {
           await atualizarCustodiaCliente(parsed.referenciaId, delta, parsed.bucket);
         }
 
+        await loadData();
         toastSuccess('Lançamento criado!');
       }
       setModalOpen(false);
@@ -235,7 +260,7 @@ export default function CaptacaoPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedLancamento?.id) return;
+    if (!ownerUid || !selectedLancamento?.id) return;
     try {
       setSaving(true);
 
@@ -247,8 +272,8 @@ export default function CaptacaoPage() {
         await atualizarCustodiaCliente(lanc.referenciaId, -deltaOriginal, lanc.bucket);
       }
 
-      await captacaoLancamentoRepository.delete(selectedLancamento.id, user.uid);
-      setLancamentos((prev) => prev.filter((l) => l.id !== selectedLancamento.id));
+      await captacaoLancamentoRepository.delete(selectedLancamento.id, ownerUid);
+      await loadData();
       toastSuccess('Lançamento excluído!');
       setDeleteModalOpen(false);
       setSelectedLancamento(null);
@@ -261,14 +286,15 @@ export default function CaptacaoPage() {
   };
 
   const kpis = useMemo(() => {
-    const entradas = lancamentos.filter((l) => l.direcao === 'entrada').reduce((sum, l) => sum + (l.valor || 0), 0);
-    const saidas = lancamentos.filter((l) => l.direcao === 'saida').reduce((sum, l) => sum + (l.valor || 0), 0);
-    const captacaoLiquida = lancamentos.filter((l) => l.tipo === 'captacao_liquida')
-      .reduce((sum, l) => sum + (l.direcao === 'entrada' ? l.valor : -l.valor), 0);
-    const transferenciaXP = lancamentos.filter((l) => l.tipo === 'transferencia_xp')
-      .reduce((sum, l) => sum + (l.direcao === 'entrada' ? l.valor : -l.valor), 0);
-    return { entradas, saidas, saldo: entradas - saidas, captacaoLiquida, transferenciaXP };
-  }, [lancamentos]);
+    const resumo = getCaptacaoResumoPeriodo(lancamentos, mesFiltro, anoFiltro);
+    return {
+      entradas: resumo.entradas,
+      saidas: resumo.saidas,
+      saldo: resumo.entradas - resumo.saidas,
+      captacaoLiquida: resumo.captacaoLiquida,
+      transferenciaXP: resumo.transferenciaXp,
+    };
+  }, [anoFiltro, lancamentos, mesFiltro]);
 
   const columns = useMemo<ColumnDef<CaptacaoLancamento>[]>(() => [
     { accessorKey: 'data', header: 'Data', cell: (info) => info.getValue() },
@@ -377,14 +403,18 @@ export default function CaptacaoPage() {
           </div>
           {origemWatch === 'cliente' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select
+              <ClientSelect
                 label="Cliente *"
-                options={[{ value: '', label: 'Selecione...' }, ...clientes.map((c) => ({ value: c.id!, label: c.nome }))]}
-                {...register('referenciaId')}
-                onChange={(e) => {
-                  const sel = clientes.find((c) => c.id === e.target.value);
+                value={selectedClientId}
+                options={clientSelectOptions}
+                loading={loading}
+                onChange={(nextValue) => {
+                  const sel = clientes.find((c) => c.id === nextValue);
+                  setValue('referenciaId', nextValue, { shouldDirty: true, shouldValidate: true });
                   setValue('referenciaNome', sel?.nome || '');
                 }}
+                error={errors.referenciaId?.message}
+                placeholder="Selecione o cliente"
               />
               <Select
                 label="Bucket *"

@@ -29,7 +29,7 @@ import {
 
 import { Button, Modal, Tabs } from '../ui';
 import { toastError } from '../../lib/toast';
-import { getStorageUid, readStorageJSON, storageKeyForUser, writeStorageJSON } from '../../lib/userStorage';
+import { readStorageJSON, storageKeyForUser, writeStorageJSON } from '../../lib/userStorage';
 import type { AccessCapabilities } from '../../lib/access';
 import type { Cliente, OfferReservation, Prospect } from '../../domain/types';
 import type { CalendarEvent } from '../../domain/types/calendar';
@@ -409,7 +409,17 @@ export default function CommandPalette({
   );
 
   const loadSearchData = useCallback(async () => {
-    const ownerUid = getStorageUid(uid);
+    const ownerUid = uid?.trim();
+    if (!ownerUid) {
+      setClientData([]);
+      setProspectData([]);
+      setAgendaData([]);
+      setOfferData([]);
+      setSearchError(null);
+      setSearchLoading(false);
+      return;
+    }
+
     setSearchLoading(true);
     setSearchError(null);
 
@@ -427,7 +437,7 @@ export default function CommandPalette({
       setOfferData(offers);
     } catch (error) {
       console.error('Erro ao carregar dados da busca global:', error);
-      setSearchError('Não foi possível buscar resultados agora.');
+      setSearchError('Nao foi possivel buscar resultados agora.');
     } finally {
       setSearchLoading(false);
     }

@@ -1,15 +1,14 @@
-﻿import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { BarChart3 } from 'lucide-react';
 import { formatCurrency, getNomeMes } from '../../../domain/calculations';
 import type { CaptacaoLancamento } from '../../../domain/types';
-import { EmptyState, SectionCard, SegmentedControl } from '../../../components/ui';
+import { EmptyState, SectionCard } from '../../../components/ui';
 import { buildEvolucaoSeries, type EvolucaoPatrimonialPoint } from '../utils/dashboardSeries';
 
 interface EvolucaoPatrimonialChartProps {
   lancamentos: CaptacaoLancamento[];
+  mesAtual: number;
   anoAtual: number;
-  defaultRange?: 6 | 12;
   captacaoRoute?: string;
 }
 
@@ -23,54 +22,34 @@ const CHART_WIDTH = 980;
 const CHART_HEIGHT = 248;
 const CHART_TOP = 16;
 const CHART_BOTTOM = 34;
-const CHART_LEFT = 20;
+const CHART_LEFT = 34;
 const CHART_RIGHT = 14;
 const GRID_LINES = 4;
-const TOOLTIP_WIDTH = 232;
-const TOOLTIP_HEIGHT = 104;
-const RANGE_OPTIONS = [
-  { value: '6', label: '6M' },
-  { value: '12', label: '12M' },
-] as const;
+const TOOLTIP_WIDTH = 244;
+const TOOLTIP_HEIGHT = 132;
 
 export function EvolucaoPatrimonialChart({
   lancamentos,
+  mesAtual,
   anoAtual,
-  defaultRange = 6,
   captacaoRoute = '/captacao',
 }: EvolucaoPatrimonialChartProps) {
-  const [range, setRange] = useState<6 | 12>(defaultRange);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const months = useMemo(() => {
-    const monthLimit = range === 6 ? 6 : 12;
-    const shortYear = String(anoAtual).slice(-2);
-
-    return Array.from({ length: monthLimit }, (_, index) => {
-      const mes = index + 1;
-      return {
-        mes,
-        ano: anoAtual,
-        label: `${getNomeMes(mes).slice(0, 3)}/${shortYear}`,
-      };
-    });
-  }, [anoAtual, range]);
-
   const series = useMemo<EvolucaoPatrimonialPoint[]>(() => {
-    return buildEvolucaoSeries(lancamentos, months);
-  }, [lancamentos, months]);
+    return buildEvolucaoSeries(lancamentos, mesAtual, anoAtual);
+  }, [anoAtual, lancamentos, mesAtual]);
+
+  const hasData = useMemo(() => {
+    return series.some((item) => item.captacaoLiquida !== 0 || item.transferenciaXp !== 0);
+  }, [series]);
 
   const values = useMemo(
-    () => series.flatMap((item) => [item.captacaoLiquida, item.transferenciaXp]),
+    () => series.flatMap((item) => [item.captacaoLiquidaAcumulada, item.transferenciaXpAcumulada]),
     [series],
   );
 
-  const maxAbs = useMemo(() => {
-    return values.reduce((acc, value) => Math.max(acc, Math.abs(value)), 0);
-  }, [values]);
-
-  const hasData = maxAbs > 0;
   const hasNegative = values.some((value) => value < 0);
   const maxPositive = values.reduce((acc, value) => Math.max(acc, value), 0);
   const maxNegativeAbs = Math.abs(values.reduce((acc, value) => Math.min(acc, value), 0));
@@ -80,35 +59,46 @@ export function EvolucaoPatrimonialChart({
   const baselineY = hasNegative
     ? CHART_TOP + plotHeight / 2
     : CHART_TOP + plotHeight - 6;
-  const maxBarHeight = hasNegative
+  const maxAmplitude = hasNegative
     ? (plotHeight / 2) - 8
     : plotHeight - 14;
   const scaleDenominator = hasNegative
     ? Math.max(maxPositive, maxNegativeAbs)
     : Math.max(maxPositive, 0);
 
-  const groupWidth = plotWidth / Math.max(series.length, 1);
-  const barWidth = Math.min(18, Math.max(10, groupWidth * 0.2));
-  const barGap = Math.max(4, groupWidth * 0.08);
+  const pointCount = Math.max(series.length - 1, 1);
+  const pointGap = plotWidth / pointCount;
+  const interactionWidth = Math.max(12, pointGap);
 
-  const getBarHeight = (value: number): number => {
-    if (scaleDenominator <= 0) return 0;
-    return (Math.abs(value) / scaleDenominator) * maxBarHeight;
+  const getPointX = (index: number): number => CHART_LEFT + (pointGap * index);
+
+  const getPointY = (value: number): number => {
+    if (scaleDenominator <= 0) return baselineY;
+    const scaled = (Math.abs(value) / scaleDenominator) * maxAmplitude;
+    if (!hasNegative || value >= 0) {
+      return baselineY - scaled;
+    }
+    return baselineY + scaled;
   };
 
-  const getBarY = (value: number, height: number): number => {
-    if (!hasNegative) return baselineY - height;
-    if (value >= 0) return baselineY - height;
-    return baselineY;
+  const buildPolyline = (
+    key: 'captacaoLiquidaAcumulada' | 'transferenciaXpAcumulada',
+  ): string => {
+    return series
+      .map((item, index) => `${getPointX(index)},${getPointY(item[key])}`)
+      .join(' ');
   };
 
-  const handleGroupHover = useCallback((index: number, event: ReactMouseEvent<SVGGElement>) => {
+  const captacaoPolyline = buildPolyline('captacaoLiquidaAcumulada');
+  const transferenciaPolyline = buildPolyline('transferenciaXpAcumulada');
+
+  const handlePointHover = useCallback((index: number, event: ReactMouseEvent<SVGRectElement>) => {
     const container = containerRef.current;
     if (!container) return;
 
     const rect = container.getBoundingClientRect();
-    const rawLeft = event.clientX - rect.left + 10;
-    const rawTop = event.clientY - rect.top - 12;
+    const rawLeft = event.clientX - rect.left + 8;
+    const rawTop = event.clientY - rect.top - 10;
     const maxLeft = Math.max(8, container.clientWidth - TOOLTIP_WIDTH - 8);
     const maxTop = Math.max(8, container.clientHeight - TOOLTIP_HEIGHT - 8);
 
@@ -121,23 +111,10 @@ export function EvolucaoPatrimonialChart({
 
   const tooltipItem = tooltip ? series[tooltip.index] : null;
 
-  const handleRangeChange = useCallback((nextValue: string) => {
-    setRange(nextValue === '12' ? 12 : 6);
-  }, []);
-
   return (
     <SectionCard
       title="Evolução Patrimonial"
-      subtitle="Captação líquida e transferência XP por mês"
-      action={(
-        <SegmentedControl
-          options={RANGE_OPTIONS}
-          value={String(range)}
-          onChange={handleRangeChange}
-          size="sm"
-          className="w-auto"
-        />
-      )}
+      subtitle={`Acumulado diário de ${getNomeMes(mesAtual)} ${anoAtual}`}
     >
       {!hasData ? (
         <EmptyState
@@ -188,58 +165,56 @@ export function EvolucaoPatrimonialChart({
               strokeWidth="1"
             />
 
+            <polyline
+              points={captacaoPolyline}
+              fill="none"
+              stroke="var(--chart-1)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <polyline
+              points={transferenciaPolyline}
+              fill="none"
+              stroke="var(--chart-5)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+
             {series.map((item, index) => {
-              const groupStart = CHART_LEFT + (index * groupWidth);
-              const center = groupStart + (groupWidth / 2);
-              const captacaoHeight = getBarHeight(item.captacaoLiquida);
-              const transferenciaHeight = getBarHeight(item.transferenciaXp);
-              const captacaoX = center - (barGap / 2) - barWidth;
-              const transferenciaX = center + (barGap / 2);
+              const x = getPointX(index);
+              const captacaoY = getPointY(item.captacaoLiquidaAcumulada);
+              const transferenciaY = getPointY(item.transferenciaXpAcumulada);
+              const isMilestone = item.dia === 1 || item.dia === series.length || item.dia % 5 === 0;
 
               return (
-                <g
-                  key={`${item.ano}-${item.mes}`}
-                  onMouseMove={(event) => handleGroupHover(index, event)}
-                  onMouseEnter={(event) => handleGroupHover(index, event)}
-                  onMouseLeave={() => setTooltip(null)}
-                >
+                <g key={`day-${item.dia}`}>
                   <rect
-                    x={groupStart + 4}
-                    y={CHART_TOP + 4}
-                    width={Math.max(0, groupWidth - 8)}
-                    height={Math.max(0, plotHeight - 8)}
-                    rx={8}
-                    fill="var(--color-surface-2)"
-                    opacity={0.38}
+                    x={x - (interactionWidth / 2)}
+                    y={CHART_TOP}
+                    width={interactionWidth}
+                    height={plotHeight}
+                    fill="transparent"
+                    onMouseMove={(event) => handlePointHover(index, event)}
+                    onMouseEnter={(event) => handlePointHover(index, event)}
+                    onMouseLeave={() => setTooltip(null)}
                   />
 
-                  <rect
-                    x={captacaoX}
-                    y={getBarY(item.captacaoLiquida, captacaoHeight)}
-                    width={barWidth}
-                    height={captacaoHeight}
-                    rx={4}
-                    fill="var(--chart-1)"
-                  />
+                  <circle cx={x} cy={captacaoY} r={2.8} fill="var(--chart-1)" />
+                  <circle cx={x} cy={transferenciaY} r={2.8} fill="var(--chart-5)" />
 
-                  <rect
-                    x={transferenciaX}
-                    y={getBarY(item.transferenciaXp, transferenciaHeight)}
-                    width={barWidth}
-                    height={transferenciaHeight}
-                    rx={4}
-                    fill="var(--chart-5)"
-                  />
-
-                  <text
-                    x={center}
-                    y={CHART_HEIGHT - 10}
-                    textAnchor="middle"
-                    fontSize="11.5"
-                    fill="var(--color-text-secondary)"
-                  >
-                    {item.label}
-                  </text>
+                  {isMilestone && (
+                    <text
+                      x={x}
+                      y={CHART_HEIGHT - 10}
+                      textAnchor="middle"
+                      fontSize="11"
+                      fill="var(--color-text-secondary)"
+                    >
+                      {item.label}
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -257,38 +232,46 @@ export function EvolucaoPatrimonialChart({
                 color: 'var(--color-text)',
               }}
             >
-              <p className="mb-2 font-semibold">{tooltipItem.label}</p>
-              <div className="space-y-1">
-                <p className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-1.5">
-                    <BarChart3 className="h-3.5 w-3.5" style={{ color: 'var(--chart-1)' }} />
-                    Captação
-                  </span>
+              <p className="mb-2 font-semibold">
+                Dia {tooltipItem.label}/{String(mesAtual).padStart(2, '0')}
+              </p>
+              <div className="space-y-1.5">
+                <p className="flex items-center justify-between gap-2">
+                  <span>Captação diária</span>
                   <span style={{ color: tooltipItem.captacaoLiquida >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                     {formatCurrency(tooltipItem.captacaoLiquida)}
                   </span>
                 </p>
-                <p className="flex items-center justify-between gap-3">
-                  <span className="flex items-center gap-1.5">
-                    <BarChart3 className="h-3.5 w-3.5" style={{ color: 'var(--chart-5)' }} />
-                    Transferência XP
+                <p className="flex items-center justify-between gap-2">
+                  <span>Captação acumulada</span>
+                  <span style={{ color: tooltipItem.captacaoLiquidaAcumulada >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                    {formatCurrency(tooltipItem.captacaoLiquidaAcumulada)}
                   </span>
+                </p>
+                <p className="flex items-center justify-between gap-2">
+                  <span>Transferência XP diária</span>
                   <span style={{ color: tooltipItem.transferenciaXp >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                     {formatCurrency(tooltipItem.transferenciaXp)}
+                  </span>
+                </p>
+                <p className="flex items-center justify-between gap-2">
+                  <span>Transferência XP acumulada</span>
+                  <span style={{ color: tooltipItem.transferenciaXpAcumulada >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                    {formatCurrency(tooltipItem.transferenciaXpAcumulada)}
                   </span>
                 </p>
               </div>
             </div>
           )}
 
-          <div className="mt-2 flex items-center gap-4 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs" style={{ color: 'var(--color-text-muted)' }}>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: 'var(--chart-1)' }} />
-              Captação líquida
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: 'var(--chart-1)' }} />
+              Captação líquida acumulada
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: 'var(--chart-5)' }} />
-              Transferência XP
+              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: 'var(--chart-5)' }} />
+              Transferência XP acumulada
             </span>
           </div>
         </div>

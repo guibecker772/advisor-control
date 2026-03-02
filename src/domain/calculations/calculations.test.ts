@@ -17,6 +17,7 @@ import {
   mapOfferAssetClassToSalaryClass,
   isOfertaEfetuada,
   filtrarOfertasPorMesAno,
+  calcularOfertasReceitaMensal,
   calcularReceitaCrossMensal,
   calcularSalarioCompletoV2,
   isCrossConcluido,
@@ -261,6 +262,70 @@ describe('Mapeamento de Ofertas para Classes de Salário', () => {
     it('deve retornar vazio se não há ofertas no mês', () => {
       const result = filtrarOfertasPorMesAno(ofertas, 3, 2024);
       expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('calcularOfertasReceitaMensal', () => {
+    const buildOferta = (overrides: Partial<OfferReservation>): OfferReservation => ({
+      nomeAtivo: 'Oferta teste',
+      status: 'LIQUIDADA',
+      commissionMode: 'FIXED_REVENUE',
+      revenueFixed: 0,
+      roaPercent: 0.02,
+      repassePercent: 0.25,
+      irPercent: 0.19,
+      clientes: [],
+      ...overrides,
+    } as OfferReservation);
+
+    it('deve considerar competencia da oferta mesmo com liquidacao em outro mes', () => {
+      const oferta = buildOferta({
+        competenceMonth: '2026-02',
+        status: 'LIQUIDADA',
+        dataLiquidacao: '2026-03-04',
+        revenueFixed: 1200,
+      });
+
+      expect(calcularOfertasReceitaMensal([oferta], 2, 2026)).toBe(1200);
+      expect(calcularOfertasReceitaMensal([oferta], 3, 2026)).toBe(0);
+    });
+
+    it('deve ignorar oferta sem status LIQUIDADA mesmo com data de liquidacao', () => {
+      const ofertaPendente = buildOferta({
+        competenceMonth: '2026-02',
+        status: 'PENDENTE',
+        dataLiquidacao: '2026-02-10',
+        revenueFixed: 650,
+      });
+
+      expect(calcularOfertasReceitaMensal([ofertaPendente], 2, 2026)).toBe(0);
+    });
+
+    it('deve excluir ofertas canceladas mesmo com data de liquidacao preenchida', () => {
+      const ofertaCancelada = buildOferta({
+        competenceMonth: '2026-02',
+        status: 'CANCELADA',
+        dataLiquidacao: '2026-02-10',
+        revenueFixed: 900,
+      });
+
+      expect(calcularOfertasReceitaMensal([ofertaCancelada], 2, 2026)).toBe(0);
+    });
+
+    it('deve usar fallback de dataReserva e createdAt quando competenceMonth estiver ausente', () => {
+      const ofertaComDataReserva = buildOferta({
+        competenceMonth: undefined,
+        dataReserva: '2026-02-18',
+        revenueFixed: 500,
+      });
+      const ofertaComCreatedAt = buildOferta({
+        competenceMonth: undefined,
+        dataReserva: undefined,
+        createdAt: '2026-02-05T10:00:00.000Z',
+        revenueFixed: 700,
+      });
+
+      expect(calcularOfertasReceitaMensal([ofertaComDataReserva, ofertaComCreatedAt], 2, 2026)).toBe(1200);
     });
   });
 

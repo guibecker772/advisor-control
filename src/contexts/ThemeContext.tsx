@@ -36,6 +36,7 @@ interface ThemeContextData {
   pref: ThemePref;
   effective: EffectiveTheme;
   setPref: (p: ThemePref) => void;
+  setRouteThemeOverride: (theme: EffectiveTheme | null) => void;
 }
 
 const ThemeContext = createContext<ThemeContextData | undefined>(undefined);
@@ -49,23 +50,26 @@ export function useTheme() {
 // ── Provider ───────────────────────────────────────────
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [pref, setPrefState] = useState<ThemePref>(getStoredPref);
-  const [effective, setEffective] = useState<EffectiveTheme>(() =>
+  const [effectiveBase, setEffectiveBase] = useState<EffectiveTheme>(() =>
     getEffective(getStoredPref()),
   );
+  const [routeThemeOverride, setRouteThemeOverrideState] = useState<EffectiveTheme | null>(null);
+  const effective = routeThemeOverride ?? effectiveBase;
 
   const setPref = useCallback((newPref: ThemePref) => {
     localStorage.setItem(STORAGE_KEY, newPref);
     setPrefState(newPref);
-    const eff = getEffective(newPref);
-    setEffective(eff);
-    applyToDOM(eff);
+    setEffectiveBase(getEffective(newPref));
   }, []);
 
-  // Apply on mount (sync with anti-FOUC script)
+  const setRouteThemeOverride = useCallback((theme: EffectiveTheme | null) => {
+    setRouteThemeOverrideState(theme);
+  }, []);
+
+  // Keep DOM in sync with active theme (preference + temporary route override)
   useEffect(() => {
     applyToDOM(effective);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [effective]);
 
   // System media-query listener — active ONLY when pref === 'system'
   useEffect(() => {
@@ -74,8 +78,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const mq = window.matchMedia('(prefers-color-scheme: light)');
     const handler = (e: MediaQueryListEvent) => {
       const eff: EffectiveTheme = e.matches ? 'light' : 'dark';
-      setEffective(eff);
-      applyToDOM(eff);
+      setEffectiveBase(eff);
     };
 
     mq.addEventListener('change', handler);
@@ -83,7 +86,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [pref]);
 
   return (
-    <ThemeContext.Provider value={{ pref, effective, setPref }}>
+    <ThemeContext.Provider value={{ pref, effective, setPref, setRouteThemeOverride }}>
       {children}
     </ThemeContext.Provider>
   );

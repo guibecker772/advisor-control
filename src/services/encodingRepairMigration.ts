@@ -15,6 +15,7 @@ import {
   prospectRepository,
   reservaRepository,
   salarioRepository,
+  isLocalDataDriver,
 } from './repositories';
 
 const MIGRATION_KEY = 'ac_mojibake_repair_v1';
@@ -39,6 +40,7 @@ const repositories = [
 ];
 
 export async function runEncodingRepairMigration(ownerUid: string): Promise<void> {
+  if (!isLocalDataDriver) return;
   if (!ownerUid) return;
 
   const migrationToken = `${MIGRATION_KEY}__${ownerUid}`;

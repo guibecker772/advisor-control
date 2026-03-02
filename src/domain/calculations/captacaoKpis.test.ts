@@ -21,6 +21,9 @@ describe('captacao KPI aggregation', () => {
     const lancamentos = [
       { mes: 2, ano: 2026, direcao: 'entrada', tipo: 'captacao_liquida', valor: 100 },
       { mes: 2, ano: 2026, direcao: 'saida', tipo: 'captacao_liquida', valor: 25 },
+      { mes: 2, ano: 2026, direcao: 'Saída', tipo: 'captacao_liquida', valor: 10 },
+      { mes: 2, ano: 2026, direcao: 'saida', tipo: 'resgate', valor: 40 },
+      { mes: 2, ano: 2026, direcao: 'entrada', tipo: 'resgate', valor: 5 },
       { mes: 2, ano: 2026, direcao: 'entrada', tipo: 'transferencia_xp', valor: 80 },
       { mes: 2, ano: 2026, direcao: 'saida', tipo: 'transferencia_xp', valor: 20 },
       { mes: 2, ano: 2026, direcao: 'entrada', tipo: 'captacao_liquida', valor: 999, status: 'cancelado' },
@@ -28,7 +31,7 @@ describe('captacao KPI aggregation', () => {
       { mes: 1, ano: 2026, direcao: 'entrada', tipo: 'captacao_liquida', valor: 5000 },
     ] as unknown as CaptacaoLancamento[];
 
-    expect(calcularCaptacaoLiquidaMensal(lancamentos, 2, 2026)).toBe(75);
+    expect(calcularCaptacaoLiquidaMensal(lancamentos, 2, 2026)).toBe(30);
     expect(calcularTransferenciaXpMensal(lancamentos, 2, 2026)).toBe(60);
   });
 });

@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import type { ChangeEvent } from 'react';
 import {
   DollarSign,
   Package,
@@ -31,6 +32,12 @@ import {
   formatPercent,
   getNomeMes,
 } from '../../domain/calculations';
+import { getCaptacaoResumoPeriodo } from '../../domain/calculations/captacaoPeriodo';
+import {
+  competenceMonthToMonthYear,
+  getCurrentCompetenceMonth,
+  normalizeCompetenceMonth,
+} from '../../domain/offers';
 import type {
   CaptacaoLancamento,
   Cliente,
@@ -48,6 +55,7 @@ import { EvolucaoPatrimonialChart } from './components/EvolucaoPatrimonialChart'
 import { AlertasEOportunidades } from './components/AlertasEOportunidades';
 import { AtividadeRecente } from './components/AtividadeRecente';
 import { MetaPeriodoCard } from './components/MetaPeriodoCard';
+import { OffersOperationalPanel } from './components/OffersOperationalPanel';
 import { HojeWidget } from './components/HojeWidget';
 import { FunilProspects } from './components/FunilProspects';
 import { Top5ClientesCustodia, Top5Captacoes } from './components/Top5Widgets';
@@ -113,8 +121,17 @@ const QUICK_ACTIONS: QuickAction[] = [
   },
 ];
 
+const DASHBOARD_COMPETENCE_MONTH_STORAGE_KEY = 'advisor_dashboard_competence_v1';
+
+function readInitialCompetenceMonth(): string {
+  if (typeof window === 'undefined') return getCurrentCompetenceMonth();
+  const stored = window.localStorage.getItem(DASHBOARD_COMPETENCE_MONTH_STORAGE_KEY);
+  return normalizeCompetenceMonth(stored, new Date().toISOString());
+}
+
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [loading, setLoading] = useState(true);
   const [refreshSeq, setRefreshSeq] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
@@ -131,12 +148,53 @@ export default function DashboardPage() {
   const [crosses, setCrosses] = useState<Cross[]>([]);
   const [reunioesMes, setReunioesMes] = useState<ClienteReuniao[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [competenceMonth, setCompetenceMonth] = useState<string>(readInitialCompetenceMonth);
 
-  const mesAtual = new Date().getMonth() + 1;
-  const anoAtual = new Date().getFullYear();
+  const normalizedCompetenceMonth = useMemo(() => {
+    return normalizeCompetenceMonth(competenceMonth, new Date().toISOString());
+  }, [competenceMonth]);
+
+  const periodoSelecionado = useMemo(() => {
+    const parsed = competenceMonthToMonthYear(normalizedCompetenceMonth);
+    if (parsed) return parsed;
+
+    const fallback = competenceMonthToMonthYear(getCurrentCompetenceMonth());
+    if (fallback) return fallback;
+
+    const now = new Date();
+    return { mes: now.getMonth() + 1, ano: now.getFullYear() };
+  }, [normalizedCompetenceMonth]);
+
+  const mesAtual = periodoSelecionado.mes;
+  const anoAtual = periodoSelecionado.ano;
+
+  const handleCompetenceMonthChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const nextValue = normalizeCompetenceMonth(event.target.value, new Date().toISOString());
+    setCompetenceMonth(nextValue);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(DASHBOARD_COMPETENCE_MONTH_STORAGE_KEY, normalizedCompetenceMonth);
+  }, [normalizedCompetenceMonth]);
 
   const loadData = useCallback(async () => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setClientes([]);
+      setProspects([]);
+      setCustodiaReceita([]);
+      setMonthlyGoals([]);
+      setMonthlyGoal(null);
+      setCaptacaoLancamentos([]);
+      setOffers([]);
+      setCrosses([]);
+      setReunioesMes([]);
+      setCalendarEvents([]);
+      setLoading(false);
+      return;
+    }
+
     const requestId = loadRequestIdRef.current + 1;
     loadRequestIdRef.current = requestId;
 
@@ -154,15 +212,15 @@ export default function DashboardPage() {
         reunioesData,
         calendarData,
       ] = await Promise.all([
-        clienteRepository.getAll(user.uid),
-        prospectRepository.getAll(user.uid),
-        custodiaReceitaRepository.getByMonth(user.uid, mesAtual, anoAtual),
-        monthlyGoalsRepository.getAll(user.uid),
-        captacaoLancamentoRepository.getAll(user.uid),
-        offerReservationRepository.getAll(user.uid),
-        crossRepository.getAll(user.uid),
-        clienteReuniaoRepository.getByMonth(user.uid, mesAtual, anoAtual),
-        calendarEventRepository.getAll(user.uid),
+        clienteRepository.getAll(ownerUid),
+        prospectRepository.getAll(ownerUid),
+        custodiaReceitaRepository.getByMonth(ownerUid, mesAtual, anoAtual),
+        monthlyGoalsRepository.getAll(ownerUid),
+        captacaoLancamentoRepository.getAll(ownerUid),
+        offerReservationRepository.getAll(ownerUid),
+        crossRepository.getAll(ownerUid),
+        clienteReuniaoRepository.getByMonth(ownerUid, mesAtual, anoAtual),
+        calendarEventRepository.getAll(ownerUid),
       ]) as [
         Cliente[],
         Prospect[],
@@ -198,11 +256,12 @@ export default function DashboardPage() {
         setLoading(false);
       }
     }
-  }, [user, mesAtual, anoAtual]);
+  }, [authLoading, ownerUid, mesAtual, anoAtual]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadData();
-  }, [loadData, refreshSeq]);
+  }, [authLoading, loadData, refreshSeq]);
 
   useEffect(() => {
     const unsubscribe = subscribeDataInvalidation(
@@ -244,6 +303,10 @@ export default function DashboardPage() {
     );
   }, [custodiaReceita, captacaoLancamentos, mesAtual, anoAtual, offers, crosses]);
 
+  const captacaoResumoMes = useMemo(() => {
+    return getCaptacaoResumoPeriodo(captacaoLancamentos, mesAtual, anoAtual);
+  }, [captacaoLancamentos, mesAtual, anoAtual]);
+
   const roaMensal = useMemo(() => {
     const custodiaMedia = custodiaTotal > 0 ? custodiaTotal : 1;
     return calcularROA(realizadosMes.receita, custodiaMedia);
@@ -262,21 +325,6 @@ export default function DashboardPage() {
       return 'Em linha';
     };
 
-    const captacaoProgress =
-      monthlyGoal && Number(monthlyGoal.metaCaptacaoLiquida) > 0
-        ? (realizadosMes.captacaoLiquida / Number(monthlyGoal.metaCaptacaoLiquida)) * 100
-        : null;
-
-    const receitaProgress =
-      monthlyGoal && Number(monthlyGoal.metaReceita) > 0
-        ? (realizadosMes.receita / Number(monthlyGoal.metaReceita)) * 100
-        : null;
-
-    const transferenciaProgress =
-      monthlyGoal && Number(monthlyGoal.metaTransferenciaXp) > 0
-        ? (realizadosMes.transferenciaXp / Number(monthlyGoal.metaTransferenciaXp)) * 100
-        : null;
-
     return [
       {
         id: 'custodia-total',
@@ -289,25 +337,29 @@ export default function DashboardPage() {
       {
         id: 'captacao-liquida',
         title: 'Captação Líquida (Mês)',
-        value: formatCurrency(realizadosMes.captacaoLiquida),
+        value: formatCurrency(captacaoResumoMes.captacaoLiquida),
         subtitle: getNomeMes(mesAtual),
         icon: TrendingUp,
         accentColor: 'info' as const,
-        trend: getTrend(realizadosMes.captacaoLiquida),
-        trendValue: getTrendText(realizadosMes.captacaoLiquida),
-        progress: captacaoProgress,
+        trend: getTrend(captacaoResumoMes.captacaoLiquida),
+        trendValue: getTrendText(captacaoResumoMes.captacaoLiquida),
+        progress: monthlyGoal && Number(monthlyGoal.metaCaptacaoLiquida) > 0
+          ? (captacaoResumoMes.captacaoLiquida / Number(monthlyGoal.metaCaptacaoLiquida)) * 100
+          : null,
         progressLabel: 'vs meta',
       },
       {
         id: 'transferencia-xp',
         title: 'Transferência XP (Mês)',
-        value: formatCurrency(realizadosMes.transferenciaXp),
+        value: formatCurrency(captacaoResumoMes.transferenciaXp),
         subtitle: getNomeMes(mesAtual),
         icon: Repeat,
         accentColor: 'warning' as const,
-        trend: getTrend(realizadosMes.transferenciaXp),
-        trendValue: getTrendText(realizadosMes.transferenciaXp),
-        progress: transferenciaProgress,
+        trend: getTrend(captacaoResumoMes.transferenciaXp),
+        trendValue: getTrendText(captacaoResumoMes.transferenciaXp),
+        progress: monthlyGoal && Number(monthlyGoal.metaTransferenciaXp) > 0
+          ? (captacaoResumoMes.transferenciaXp / Number(monthlyGoal.metaTransferenciaXp)) * 100
+          : null,
         progressLabel: 'vs meta',
       },
       {
@@ -319,7 +371,9 @@ export default function DashboardPage() {
         accentColor: 'success' as const,
         trend: getTrend(realizadosMes.receita),
         trendValue: getTrendText(realizadosMes.receita),
-        progress: receitaProgress,
+        progress: monthlyGoal && Number(monthlyGoal.metaReceita) > 0
+          ? (realizadosMes.receita / Number(monthlyGoal.metaReceita)) * 100
+          : null,
         progressLabel: 'vs meta',
       },
       {
@@ -343,12 +397,11 @@ export default function DashboardPage() {
     clientes.length,
     clientesAtivos.length,
     custodiaTotal,
-    realizadosMes.captacaoLiquida,
-    realizadosMes.transferenciaXp,
+    captacaoResumoMes.captacaoLiquida,
+    captacaoResumoMes.transferenciaXp,
     realizadosMes.receita,
     roaMensal,
     mesAtual,
-    monthlyGoal,
   ]);
 
   const lastUpdatedLabel = useMemo(() => {
@@ -374,9 +427,32 @@ export default function DashboardPage() {
       <PageHeader
         title="Visão Geral"
         subtitle={`${getNomeMes(mesAtual)} de ${anoAtual}${lastUpdatedLabel ? ` • Atualizado em: ${lastUpdatedLabel}` : ''}`}
+        controls={(
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="dashboard-competence-month"
+              className="text-sm font-medium"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              Competência
+            </label>
+            <input
+              id="dashboard-competence-month"
+              type="month"
+              value={normalizedCompetenceMonth}
+              onChange={handleCompetenceMonthChange}
+              className="px-3 py-2 rounded-md text-sm focus-gold"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                color: 'var(--color-text)',
+                border: '1px solid var(--color-border)',
+              }}
+              aria-label="Selecionar competência do dashboard"
+            />
+          </div>
+        )}
       />
 
-      {/* ── KPI row ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon;
@@ -397,6 +473,13 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      {/* Offers operational panel (metas-app specific) */}
+      <OffersOperationalPanel
+        offers={offers}
+        selectedCompetenceMonth={normalizedCompetenceMonth}
+        offersRoute="/ofertas"
+      />
 
       {/* ── Main grid: content (8 col) + sticky rail (4 col) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-5">
@@ -420,7 +503,8 @@ export default function DashboardPage() {
 
           {/* Chart */}
           <EvolucaoPatrimonialChart
-            lancamentos={captacaoLancamentos}
+            lancamentos={captacaoResumoMes.lancamentosPeriodo}
+            mesAtual={mesAtual}
             anoAtual={anoAtual}
             captacaoRoute="/captacao"
           />
@@ -512,5 +596,3 @@ export default function DashboardPage() {
     </PageContainer>
   );
 }
-
-

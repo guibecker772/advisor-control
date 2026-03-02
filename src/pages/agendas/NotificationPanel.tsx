@@ -41,7 +41,12 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
   };
 
   return (
-    <div className="rounded-xl shadow-sm overflow-hidden" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}>
+    <div
+      className="pointer-events-auto select-text rounded-xl shadow-sm overflow-hidden"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--color-border-subtle)', backgroundColor: 'var(--color-surface-2)' }}>
         <div className="flex items-center gap-2">
@@ -58,6 +63,7 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
           {notifications.length > 0 && (
             <>
               <button
+                type="button"
                 onClick={markAllAsRead}
                 className="p-1.5 rounded-lg transition-colors hover-light"
                 style={{ color: 'var(--color-text-muted)' }}
@@ -66,6 +72,7 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
                 <CheckCheck className="w-4 h-4" />
               </button>
               <button
+                type="button"
                 onClick={clearAll}
                 className="p-1.5 rounded-lg transition-colors hover-light"
                 style={{ color: 'var(--color-text-muted)' }}
@@ -76,6 +83,7 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
             </>
           )}
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg transition-colors hover-light"
             style={{ color: 'var(--color-text-muted)' }}
@@ -143,6 +151,7 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
                   <div className="flex items-center gap-1">
                     {!notification.read && (
                       <button
+                        type="button"
                         onClick={() => markAsRead(notification.id!)}
                         className="p-1 rounded transition-colors"
                         style={{ color: 'var(--color-text-muted)' }}
@@ -154,6 +163,7 @@ export default function NotificationPanel({ onClose }: NotificationPanelProps) {
                       </button>
                     )}
                     <button
+                      type="button"
                       onClick={() => deleteNotification(notification.id!)}
                       className="p-1 rounded transition-colors"
                       style={{ color: 'var(--color-text-muted)' }}

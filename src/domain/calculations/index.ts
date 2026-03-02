@@ -5,6 +5,11 @@
 
 import type { CustodiaReceita, Cliente, Cross, Reserva, Salario, PlanoReceitas, CaptacaoLancamento, SalarioClasse, OfferReservation } from '../types';
 import { calcOfferReservationTotals } from '../types';
+import {
+  isValidCompetenceMonth,
+  normalizeCompetenceMonth,
+  normalizeOfferStatus,
+} from '../offers';
 
 // ============== FORMATAÇÃO ==============
 
@@ -263,18 +268,76 @@ export function calcularCrossRealizadoMensal(crosses: Cross[], mes: number, ano:
     }, 0);
 }
 
+// ============== NOVOS CÁLCULOS PARA DASHBOARD (WIDGETS) ==============
+
+/**
+ * Retorna os top N clientes por custódia atual
+ * Útil para widget de "Maiores Clientes"
+ */
+export function calcularTopClientesCustodia(clientes: Cliente[], n: number = 5): Cliente[] {
+  return [...clientes]
+    .sort((a, b) => (b.custodiaAtual || 0) - (a.custodiaAtual || 0))
+    .slice(0, n);
+}
+
+/**
+ * Prepara dados para gráfico de composição de receita (ordenado do maior para o menor)
+ * Útil para widget de "Distribuição de Receita"
+ */
+export function calcularComposicaoReceita(registros: CustodiaReceita[]): { label: string; value: number; color: string }[] {
+  const porCategoria = calcularReceitaPorCategoria(registros);
+  
+  const labels: Record<string, string> = {
+    rv: 'Renda Variável',
+    rf: 'Renda Fixa',
+    coe: 'COE',
+    fundos: 'Fundos',
+    previdencia: 'Previdência',
+    outros: 'Outros'
+  };
+  
+  // Cores sugeridas para o gráfico (padrão do sistema)
+  const colors: Record<string, string> = {
+    rv: 'var(--color-warning)',
+    rf: 'var(--color-info)',
+    coe: 'var(--color-danger)',
+    fundos: 'var(--color-success)',
+    previdencia: 'var(--color-gold)',
+    outros: 'var(--color-text-muted)'
+  };
+
+  return Object.entries(porCategoria)
+    .map(([key, value]) => ({
+      label: labels[key] || key,
+      value,
+      color: colors[key] || 'var(--color-text)'
+    }))
+    .filter(item => item.value > 0) // Remove categorias zeradas
+    .sort((a, b) => b.value - a.value);
+}
+
 /**
  * Calcula receita de Ofertas/Ativos para um mês específico
- * Considera data de liquidação no mês/ano
+ * Considera competência da oferta no mês/ano e gate de status liquidada
  */
 export function calcularOfertasReceitaMensal(ofertas: OfferReservation[], mes: number, ano: number): number {
+  const targetCompetenceMonth = `${ano}-${String(mes).padStart(2, '0')}`;
   return ofertas
-    .filter(o => {
-      if (!o.dataLiquidacao) return false;
-      const d = new Date(o.dataLiquidacao + 'T00:00:00');
-      return d.getMonth() + 1 === mes && d.getFullYear() === ano;
+    .filter((offer) => {
+      const status = normalizeOfferStatus(offer.status);
+      if (status !== 'LIQUIDADA') return false;
+
+      const fallbackDate = offer.dataReserva || offer.createdAt;
+      const rawCompetenceMonth = offer.competenceMonth;
+      if (!isValidCompetenceMonth(rawCompetenceMonth) && !fallbackDate) {
+        // Sem competência válida e sem fallback temporal, não há como atribuir período.
+        return false;
+      }
+
+      const competenceMonth = normalizeCompetenceMonth(rawCompetenceMonth, fallbackDate);
+      return competenceMonth === targetCompetenceMonth;
     })
-    .reduce((sum, o) => sum + calcOfferReservationTotals(o).revenueHouse, 0);
+    .reduce((sum, offer) => sum + calcOfferReservationTotals(offer).revenueHouse, 0);
 }
 
 /**
@@ -605,17 +668,21 @@ export function gerarPeriodosDisponiveis(
   anoFim: number = new Date().getFullYear()
 ): { mes: number; ano: number; label: string }[] {
   const periodos: { mes: number; ano: number; label: string }[] = [];
-  const meses = [
-    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-  ];
+  // Usa o formatador nativo para obter o nome do mês
+  const formatter = new Intl.DateTimeFormat('pt-BR', { month: 'long' });
   
   for (let ano = anoInicio; ano <= anoFim; ano++) {
     for (let mes = 1; mes <= 12; mes++) {
+      // Cria uma data fictícia para extrair o nome do mês
+      const date = new Date(ano, mes - 1, 1);
+      const nomeMes = formatter.format(date);
+      // Capitaliza a primeira letra (ex: "janeiro" ao invés de "janeiro")
+      const labelMes = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1);
+
       periodos.push({
         mes,
         ano,
-        label: `${meses[mes - 1]}/${ano}`,
+        label: `${labelMes}/${ano}`,
       });
     }
   }
@@ -784,12 +851,24 @@ interface CaptacaoLancamentoRuntimeShape {
 
 function normalizeCaptacaoCategory(value: unknown): string {
   if (typeof value !== 'string') return '';
-  return value.trim().toUpperCase();
+  return value
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 function resolveCaptacaoCategory(lancamento: CaptacaoLancamento): string {
   const runtime = lancamento as CaptacaoLancamento & CaptacaoLancamentoRuntimeShape;
   return normalizeCaptacaoCategory(runtime.category ?? runtime.type ?? lancamento.tipo);
+}
+
+function resolveCaptacaoKpiCategory(lancamento: CaptacaoLancamento): CaptacaoKpiCategory | null {
+  const category = resolveCaptacaoCategory(lancamento);
+  if (category === 'TRANSFERENCIA_XP') return 'TRANSFERENCIA_XP';
+  // Resgate entra no saldo de captação líquida (entradas - saídas).
+  if (category === 'CAPTACAO_LIQUIDA' || category === 'RESGATE') return 'CAPTACAO_LIQUIDA';
+  return null;
 }
 
 function isValidCaptacaoLancamento(lancamento: CaptacaoLancamento): boolean {
@@ -802,13 +881,58 @@ function isValidCaptacaoLancamento(lancamento: CaptacaoLancamento): boolean {
   return true;
 }
 
+function parseCaptacaoDate(value: unknown): Date | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const parsed = new Date(`${trimmed}T12:00:00-03:00`);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+
+  const brDateOnlyMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brDateOnlyMatch) {
+    const [, day, month, year] = brDateOnlyMatch;
+    const parsed = new Date(`${year}-${month}-${day}T12:00:00-03:00`);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+
+  const parsed = new Date(trimmed);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function resolveLancamentoMonthYear(lancamento: CaptacaoLancamento): { mes: number; ano: number } | null {
+  const parsedDate = parseCaptacaoDate(lancamento.data);
+  if (parsedDate) {
+    return {
+      mes: parsedDate.getMonth() + 1,
+      ano: parsedDate.getFullYear(),
+    };
+  }
+
+  if (
+    Number.isFinite(lancamento.mes)
+    && Number.isFinite(lancamento.ano)
+    && lancamento.mes >= 1
+    && lancamento.mes <= 12
+  ) {
+    return { mes: lancamento.mes, ano: lancamento.ano };
+  }
+
+  return null;
+}
+
 function getCaptacaoBaseMensal(
   lancamentos: CaptacaoLancamento[],
   mes: number,
   ano: number,
 ): CaptacaoLancamento[] {
   return lancamentos.filter((lancamento) => {
-    return lancamento.mes === mes && lancamento.ano === ano && isValidCaptacaoLancamento(lancamento);
+    if (!isValidCaptacaoLancamento(lancamento)) return false;
+    const period = resolveLancamentoMonthYear(lancamento);
+    if (!period) return false;
+    return period.mes === mes && period.ano === ano;
   });
 }
 
@@ -816,7 +940,8 @@ function getSignedCaptacaoAmount(lancamento: CaptacaoLancamento): number {
   const runtime = lancamento as CaptacaoLancamento & CaptacaoLancamentoRuntimeShape;
   const amount = typeof runtime.amount === 'number' ? runtime.amount : lancamento.valor;
   const normalizedAmount = Number.isFinite(amount) ? amount : 0;
-  return lancamento.direcao === 'entrada' ? normalizedAmount : -normalizedAmount;
+  const direction = normalizeCaptacaoCategory(lancamento.direcao);
+  return direction === 'ENTRADA' ? normalizedAmount : -normalizedAmount;
 }
 
 function sumCaptacaoByCategory(
@@ -824,7 +949,7 @@ function sumCaptacaoByCategory(
   category: CaptacaoKpiCategory,
 ): number {
   return lancamentos
-    .filter((lancamento) => resolveCaptacaoCategory(lancamento) === category)
+    .filter((lancamento) => resolveCaptacaoKpiCategory(lancamento) === category)
     .reduce((sum, lancamento) => sum + getSignedCaptacaoAmount(lancamento), 0);
 }
 
@@ -862,7 +987,7 @@ export function calcularRealizadosMensal(
     .filter(c => c.mes === mes && c.ano === ano)
     .reduce((sum, c) => sum + calcularReceitaRegistro(c), 0);
 
-  // Receita Ofertas: soma de revenueHouse das ofertas liquidadas no mês
+  // Receita Ofertas: soma de revenueHouse das ofertas liquidadas realizadas na competência do mês
   const receitaOfertas = calcularOfertasReceitaMensal(ofertas, mes, ano);
 
   // Receita Cross: soma de realizedValue ou comissão das vendas concluídas no mês

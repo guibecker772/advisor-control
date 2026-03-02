@@ -56,10 +56,6 @@ export function initFirebase(): FirebaseInitResult {
   const firebaseEnv = readFirebaseEnv();
   const detectedVars = mapDetectedVars(firebaseEnv);
 
-  if (import.meta.env.DEV) {
-    console.info('[firebase] Variaveis detectadas (true/false):', detectedVars);
-  }
-
   const missingVars = FIREBASE_REQUIRED_ENV_KEYS.filter((key) => !detectedVars[key]);
 
   if (missingVars.length > 0) {

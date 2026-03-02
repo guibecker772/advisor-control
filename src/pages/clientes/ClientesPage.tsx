@@ -92,7 +92,8 @@ function isReviewPendingClient(cliente: Cliente): boolean {
 }
 
 export default function ClientesPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [searchParams, setSearchParams] = useSearchParams();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [reunioes, setReunioes] = useState<ClienteReuniao[]>([]);
@@ -131,14 +132,20 @@ export default function ClientesPage() {
 
   // Carregar clientes e reuniões
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setClientes([]);
+      setReunioes([]);
+      setLoading(false);
+      return;
+    }
 
     const loadData = async () => {
       try {
         setLoading(true);
         const [clientesData, reunioesData] = await Promise.all([
-          clienteRepository.getAll(user.uid),
-          clienteReuniaoRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
+          clienteRepository.getAll(ownerUid),
+          clienteReuniaoRepository.getByMonth(ownerUid, mesFiltro, anoFiltro),
         ]);
         setClientes(clientesData);
         setReunioes(reunioesData);
@@ -151,7 +158,7 @@ export default function ClientesPage() {
     };
 
     loadData();
-  }, [user, mesFiltro, anoFiltro, refreshSeq]);
+  }, [authLoading, ownerUid, mesFiltro, anoFiltro, refreshSeq]);
 
   useEffect(() => {
     return subscribeDataInvalidation(['clients'], () => {
@@ -297,14 +304,14 @@ export default function ClientesPage() {
 
   // Salvar cliente
   const onSubmit = async (data: ClienteInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setSaving(true);
       const parsed = clienteSchema.parse(data);
 
       if (selectedCliente?.id) {
-        const updated = await clienteRepository.update(selectedCliente.id, parsed, user.uid);
+        const updated = await clienteRepository.update(selectedCliente.id, parsed, ownerUid);
         if (updated) {
           setClientes((prev) =>
             prev.map((c) => (c.id === selectedCliente.id ? updated : c))
@@ -312,7 +319,7 @@ export default function ClientesPage() {
           toast.success('Cliente atualizado com sucesso!');
         }
       } else {
-        const created = await clienteRepository.create(parsed, user.uid);
+        const created = await clienteRepository.create(parsed, ownerUid);
         setClientes((prev) => [...prev, created]);
         toast.success('Cliente criado com sucesso!');
       }
@@ -329,11 +336,11 @@ export default function ClientesPage() {
 
   // Excluir cliente
   const handleDelete = async () => {
-    if (!user || !selectedCliente?.id) return;
+    if (!ownerUid || !selectedCliente?.id) return;
 
     try {
       setSaving(true);
-      await clienteRepository.delete(selectedCliente.id, user.uid);
+      await clienteRepository.delete(selectedCliente.id, ownerUid);
       setClientes((prev) => prev.filter((c) => c.id !== selectedCliente.id));
       toast.success('Cliente excluído com sucesso!');
       setDeleteModalOpen(false);
@@ -786,11 +793,11 @@ export default function ClientesPage() {
       <ClientImportWizardDialog
         isOpen={importWizardOpen}
         user={user}
-        ownerUid={user?.uid}
+        ownerUid={ownerUid}
         onClose={() => setImportWizardOpen(false)}
         onImportFinished={async () => {
-          if (!user) return;
-          const clientesAtualizados = await clienteRepository.getAll(user.uid);
+          if (!ownerUid) return;
+          const clientesAtualizados = await clienteRepository.getAll(ownerUid);
           setClientes(clientesAtualizados);
         }}
         onOpenReviewPending={() => {
@@ -1055,7 +1062,6 @@ function ClienteDetalhesModal({ isOpen, onClose, cliente, mes, ano, reuniao, onR
     </Modal>
   );
 }
-
 
 
 

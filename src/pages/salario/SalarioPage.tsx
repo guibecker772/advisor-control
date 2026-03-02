@@ -82,7 +82,8 @@ function buildSalarioDefaults(
 }
 
 export default function SalarioPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [salarios, setSalarios] = useState<Salario[]>([]);
   const [loading, setLoading] = useState(true);
   const [autoFilling, setAutoFilling] = useState(false);
@@ -140,10 +141,15 @@ export default function SalarioPage() {
   }, [watchedValues, classes]);
   
   const loadSalarios = useCallback(async () => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setSalarios([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const data = await salarioRepository.getByYear(user.uid, anoFiltro);
+      const data = await salarioRepository.getByYear(ownerUid, anoFiltro);
       setSalarios(data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
@@ -151,10 +157,10 @@ export default function SalarioPage() {
     } finally {
       setLoading(false);
     }
-  }, [user, anoFiltro]);
+  }, [anoFiltro, authLoading, ownerUid]);
 
   const syncSalarioByCompetencia = useCallback(async () => {
-    if (!user) return;
+    if (authLoading || !ownerUid) return;
 
     const periodo = competenceMonthToMonthYear(competenceMonthFiltro);
     if (!periodo) return;
@@ -162,9 +168,9 @@ export default function SalarioPage() {
     try {
       const { mes, ano } = periodo;
       const [ofertasMes, crossData, salariosMes] = await Promise.all([
-        listOffersByCompetenceMonth(user.uid, competenceMonthFiltro, SALARY_SYNC_OFFER_STATUSES),
-        crossRepository.getAll(user.uid),
-        salarioRepository.getByMonth(user.uid, mes, ano),
+        listOffersByCompetenceMonth(ownerUid, competenceMonthFiltro, SALARY_SYNC_OFFER_STATUSES),
+        crossRepository.getAll(ownerUid),
+        salarioRepository.getByMonth(ownerUid, mes, ano),
       ]) as [OfferReservation[], Cross[], Salario[]];
 
       const salarioExistente = salariosMes[0] ?? null;
@@ -186,7 +192,7 @@ export default function SalarioPage() {
             receitaTotal: receitaTotalSincronizada,
             receitaCross: receitaCrossSincronizada,
           },
-          user.uid,
+          ownerUid,
         );
 
         if (updated) {
@@ -197,7 +203,7 @@ export default function SalarioPage() {
 
       const created = await salarioRepository.create(
         buildSalarioDefaults(mes, ano, classesSincronizadas, receitaTotalSincronizada, receitaCrossSincronizada),
-        user.uid,
+        ownerUid,
       );
       if (created) {
         await loadSalarios();
@@ -206,32 +212,35 @@ export default function SalarioPage() {
       console.error('Erro ao sincronizar salário por competência:', error);
       toastError('Erro ao sincronizar salário por competência');
     }
-  }, [user, competenceMonthFiltro, loadSalarios]);
+  }, [authLoading, competenceMonthFiltro, loadSalarios, ownerUid]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadSalarios();
-  }, [loadSalarios]);
+  }, [authLoading, loadSalarios]);
 
   useEffect(() => {
+    if (authLoading) return;
     void syncSalarioByCompetencia();
-  }, [syncSalarioByCompetencia]);
+  }, [authLoading, syncSalarioByCompetencia]);
 
   useEffect(() => {
+    if (authLoading || !ownerUid) return;
     return subscribeDataInvalidation(['offers', 'salary'], async () => {
       await syncSalarioByCompetencia();
       await loadSalarios();
     });
-  }, [loadSalarios, syncSalarioByCompetencia]);
+  }, [authLoading, loadSalarios, ownerUid, syncSalarioByCompetencia]);
 
   // Buscar dados reais do mês para preencher automaticamente (Auto-preencher)
   const fetchDadosMes = async (competenceMonth: string) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setAutoFilling(true);
       const [ofertasMes, crossData] = await Promise.all([
-        listOffersByCompetenceMonth(user.uid, competenceMonth, ['LIQUIDADA']),
-        crossRepository.getAll(user.uid),
+        listOffersByCompetenceMonth(ownerUid, competenceMonth, ['LIQUIDADA']),
+        crossRepository.getAll(ownerUid),
       ]) as [OfferReservation[], Cross[]];
       const period = competenceMonthToMonthYear(competenceMonth);
       const mes = period?.mes ?? mesFiltro;
@@ -316,7 +325,7 @@ export default function SalarioPage() {
   }, [reset, mesFiltro, anoFiltro]);
 
   const onSubmit = async (data: SalarioInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setSaving(true);
@@ -332,7 +341,7 @@ export default function SalarioPage() {
       const parsed = salarioSchema.parse(dataWithClasses);
 
       if (selectedSalario?.id) {
-        const updated = await salarioRepository.update(selectedSalario.id, parsed, user.uid);
+        const updated = await salarioRepository.update(selectedSalario.id, parsed, ownerUid);
         if (updated) {
           setSalarios((prev) =>
             prev.map((s) => (s.id === selectedSalario.id ? updated : s))
@@ -340,7 +349,7 @@ export default function SalarioPage() {
           toastSuccess('Salário atualizado com sucesso!');
         }
       } else {
-        const created = await salarioRepository.create(parsed, user.uid);
+        const created = await salarioRepository.create(parsed, ownerUid);
         setSalarios((prev) => [...prev, created]);
         toastSuccess('Salário criado com sucesso!');
       }
@@ -357,11 +366,11 @@ export default function SalarioPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedSalario?.id) return;
+    if (!ownerUid || !selectedSalario?.id) return;
 
     try {
       setSaving(true);
-      await salarioRepository.delete(selectedSalario.id, user.uid);
+      await salarioRepository.delete(selectedSalario.id, ownerUid);
       setSalarios((prev) => prev.filter((s) => s.id !== selectedSalario.id));
       toastSuccess('Salário excluído com sucesso!');
       setDeleteModalOpen(false);

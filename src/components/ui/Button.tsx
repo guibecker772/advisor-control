@@ -98,14 +98,17 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string; // Para acessibilidade
 }
 
-export function IconButton({
-  icon,
-  variant = 'default',
-  size = 'md',
-  label,
-  className = '',
-  ...props
-}: IconButtonProps) {
+export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  {
+    icon,
+    variant = 'default',
+    size = 'md',
+    label,
+    className = '',
+    ...props
+  },
+  ref,
+) {
   const sizeClasses = {
     sm: 'w-8 h-8',
     md: 'w-10 h-10',
@@ -125,6 +128,7 @@ export function IconButton({
 
   return (
     <button
+      ref={ref}
       className={`
         inline-flex items-center justify-center rounded-lg
         transition-colors hover:bg-[var(--color-surface-hover)]
@@ -140,4 +144,6 @@ export function IconButton({
       {icon}
     </button>
   );
-}
+});
+
+IconButton.displayName = 'IconButton';

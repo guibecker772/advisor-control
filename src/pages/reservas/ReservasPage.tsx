@@ -13,6 +13,7 @@ import { Modal } from '../../components/shared/Modal';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
 import { ConfirmDialog, PageHeader, PageSkeleton } from '../../components/ui';
 import { toastSuccess, toastError } from '../../lib/toast';
+import ClientSelect from '../../components/clientes/ClientSelect';
 
 const tipoOptions = [
   { value: 'aporte', label: 'Aporte' },
@@ -29,7 +30,8 @@ const statusOptions = [
 ];
 
 export default function ReservasPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [reservas, setReservas] = useState<Reserva[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +44,8 @@ export default function ReservasPage() {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<ReservaInput>({
     resolver: zodResolver(reservaSchema),
@@ -53,14 +57,20 @@ export default function ReservasPage() {
   });
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setReservas([]);
+      setClientes([]);
+      setLoading(false);
+      return;
+    }
 
     const loadData = async () => {
       try {
         setLoading(true);
         const [reservaData, clienteData] = await Promise.all([
-          reservaRepository.getAll(user.uid),
-          clienteRepository.getAll(user.uid),
+          reservaRepository.getAll(ownerUid),
+          clienteRepository.getAll(ownerUid),
         ]);
         setReservas(reservaData);
         setClientes(clienteData);
@@ -73,11 +83,19 @@ export default function ReservasPage() {
     };
 
     loadData();
-  }, [user]);
+  }, [authLoading, ownerUid]);
 
-  const clienteOptions = useMemo(
-    () => clientes.map((c) => ({ value: c.id || '', label: c.nome })),
-    [clientes]
+  const selectedClientId = watch('clienteId') || '';
+  const clientSelectOptions = useMemo(
+    () => clientes
+      .filter((c) => Boolean(c.id))
+      .map((c) => ({
+        value: c.id || '',
+        label: c.nome,
+        hint: [c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' | '),
+        searchText: [c.nome, c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' '),
+      })),
+    [clientes],
   );
 
   const openModal = (reserva?: Reserva) => {
@@ -100,7 +118,7 @@ export default function ReservasPage() {
   };
 
   const onSubmit = async (data: ReservaInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setSaving(true);
@@ -113,7 +131,7 @@ export default function ReservasPage() {
       };
 
       if (selectedReserva?.id) {
-        const updated = await reservaRepository.update(selectedReserva.id, dataWithCliente, user.uid);
+        const updated = await reservaRepository.update(selectedReserva.id, dataWithCliente, ownerUid);
         if (updated) {
           setReservas((prev) =>
             prev.map((r) => (r.id === selectedReserva.id ? updated : r))
@@ -121,7 +139,7 @@ export default function ReservasPage() {
           toastSuccess('Reserva atualizada com sucesso!');
         }
       } else {
-        const created = await reservaRepository.create(dataWithCliente, user.uid);
+        const created = await reservaRepository.create(dataWithCliente, ownerUid);
         setReservas((prev) => [...prev, created]);
         toastSuccess('Reserva criada com sucesso!');
       }
@@ -137,11 +155,11 @@ export default function ReservasPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedReserva?.id) return;
+    if (!ownerUid || !selectedReserva?.id) return;
 
     try {
       setSaving(true);
-      await reservaRepository.delete(selectedReserva.id, user.uid);
+      await reservaRepository.delete(selectedReserva.id, ownerUid);
       setReservas((prev) => prev.filter((r) => r.id !== selectedReserva.id));
       toastSuccess('Reserva excluída com sucesso!');
       setDeleteModalOpen(false);
@@ -316,11 +334,16 @@ export default function ReservasPage() {
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select
+            <ClientSelect
               label="Cliente"
-              options={clienteOptions}
-              {...register('clienteId')}
+              value={selectedClientId}
+              options={clientSelectOptions}
+              loading={loading}
+              onChange={(nextValue) => {
+                setValue('clienteId', nextValue, { shouldDirty: true, shouldValidate: true });
+              }}
               error={errors.clienteId?.message}
+              placeholder="Selecione o cliente"
             />
             <Select
               label="Tipo *"

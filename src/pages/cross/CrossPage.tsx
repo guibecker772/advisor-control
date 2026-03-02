@@ -12,6 +12,7 @@ import { formatCurrency, isCrossConcluido } from '../../domain/calculations';
 import { DataTable, CurrencyCell, StatusBadge, ActionButtons } from '../../components/shared/DataTable';
 import { Modal, ConfirmDialog, PageHeader, PageSkeleton } from '../../components/ui';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
+import ClientSelect from '../../components/clientes/ClientSelect';
 
 const categoriaOptions = [
   { value: 'seguros', label: 'Seguros' },
@@ -30,7 +31,8 @@ const statusOptions = [
 ];
 
 export default function CrossPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [crosses, setCrosses] = useState<Cross[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +51,8 @@ export default function CrossPage() {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<CrossInput>({
     resolver: zodResolver(crossSchema),
@@ -62,14 +66,20 @@ export default function CrossPage() {
   });
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setCrosses([]);
+      setClientes([]);
+      setLoading(false);
+      return;
+    }
 
     const loadData = async () => {
       try {
         setLoading(true);
         const [crossData, clienteData] = await Promise.all([
-          crossRepository.getAll(user.uid),
-          clienteRepository.getAll(user.uid),
+          crossRepository.getAll(ownerUid),
+          clienteRepository.getAll(ownerUid),
         ]);
         setCrosses(crossData);
         setClientes(clienteData);
@@ -82,11 +92,19 @@ export default function CrossPage() {
     };
 
     loadData();
-  }, [user]);
+  }, [authLoading, ownerUid]);
 
-  const clienteOptions = useMemo(
-    () => clientes.map((c) => ({ value: c.id || '', label: c.nome })),
-    [clientes]
+  const selectedClientId = watch('clienteId') || '';
+  const clientSelectOptions = useMemo(
+    () => clientes
+      .filter((c) => Boolean(c.id))
+      .map((c) => ({
+        value: c.id || '',
+        label: c.nome,
+        hint: [c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' | '),
+        searchText: [c.nome, c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' '),
+      })),
+    [clientes],
   );
 
   const openModal = (cross?: Cross) => {
@@ -110,7 +128,7 @@ export default function CrossPage() {
   };
 
   const onSubmit = async (data: CrossInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setSaving(true);
@@ -138,7 +156,7 @@ export default function CrossPage() {
       };
 
       if (selectedCross?.id) {
-        const updated = await crossRepository.update(selectedCross.id, dataWithCliente, user.uid);
+        const updated = await crossRepository.update(selectedCross.id, dataWithCliente, ownerUid);
         if (updated) {
           setCrosses((prev) =>
             prev.map((c) => (c.id === selectedCross.id ? updated : c))
@@ -146,7 +164,7 @@ export default function CrossPage() {
           toastSuccess('Cross atualizado com sucesso!');
         }
       } else {
-        const created = await crossRepository.create(dataWithCliente, user.uid);
+        const created = await crossRepository.create(dataWithCliente, ownerUid);
         setCrosses((prev) => [...prev, created]);
         toastSuccess('Cross criado com sucesso!');
       }
@@ -162,11 +180,11 @@ export default function CrossPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedCross?.id) return;
+    if (!ownerUid || !selectedCross?.id) return;
 
     try {
       setSaving(true);
-      await crossRepository.delete(selectedCross.id, user.uid);
+      await crossRepository.delete(selectedCross.id, ownerUid);
       setCrosses((prev) => prev.filter((c) => c.id !== selectedCross.id));
       toastSuccess('Cross excluído com sucesso!');
       setDeleteModalOpen(false);
@@ -419,11 +437,16 @@ export default function CrossPage() {
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Select
+            <ClientSelect
               label="Cliente *"
-              options={clienteOptions}
-              {...register('clienteId')}
+              value={selectedClientId}
+              options={clientSelectOptions}
+              loading={loading}
+              onChange={(nextValue) => {
+                setValue('clienteId', nextValue, { shouldDirty: true, shouldValidate: true });
+              }}
               error={errors.clienteId?.message}
+              placeholder="Selecione o cliente"
             />
             <Input
               label="Produto *"

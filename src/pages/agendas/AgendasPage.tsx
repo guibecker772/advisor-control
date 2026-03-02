@@ -141,7 +141,7 @@ function getEventCategoryData(event: CalendarEvent): { label: string; persisted:
   if (event.meetingType) {
     return { label: MEETING_TYPE_LABELS[event.meetingType], persisted: true };
   }
-  return { label: 'Reunião', persisted: false };
+  return { label: 'Reuniao', persisted: false };
 }
 
 function getTooltipClientLabel(event: CalendarEvent): string | null {
@@ -208,12 +208,16 @@ function detectCalendarReadOnly(user: unknown): boolean {
 }
 
 export default function AgendasPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const ownerUid = user?.uid || 'dev';
+  const ownerUid = user?.uid;
   const calendarRef = useRef<FullCalendar | null>(null);
   const detailTriggerRef = useRef<HTMLElement | null>(null);
   const handledQueryRef = useRef<string | null>(null);
+  const notificationDropdownRef = useRef<HTMLDivElement | null>(null);
+  const notificationTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const notificationPanelRef = useRef<HTMLDivElement | null>(null);
+  const wasNotificationOpenRef = useRef(false);
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,7 +269,64 @@ export default function AgendasPage() {
     return () => media.removeEventListener('change', syncMedia);
   }, []);
 
+  useEffect(() => {
+    if (!notificationPanelOpen) {
+      if (wasNotificationOpenRef.current) {
+        notificationTriggerRef.current?.focus();
+      }
+      wasNotificationOpenRef.current = false;
+      return;
+    }
+
+    wasNotificationOpenRef.current = true;
+
+    const focusTimer = window.setTimeout(() => {
+      const firstInteractive = notificationPanelRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      firstInteractive?.focus();
+    }, 0);
+
+    const isEventInsideNotificationDropdown = (event: Event): boolean => {
+      const dropdownRoot = notificationDropdownRef.current;
+      if (!dropdownRoot) return false;
+      if (typeof event.composedPath === 'function') {
+        return event.composedPath().includes(dropdownRoot);
+      }
+      return dropdownRoot.contains(event.target as Node | null);
+    };
+
+    const handleDocumentPointerUp = (event: PointerEvent) => {
+      if (!isEventInsideNotificationDropdown(event)) {
+        setNotificationPanelOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setNotificationPanelOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerup', handleDocumentPointerUp);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      clearTimeout(focusTimer);
+      document.removeEventListener('pointerup', handleDocumentPointerUp);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [notificationPanelOpen]);
+
   const loadEvents = useCallback(async () => {
+    if (authLoading) return;
+    if (!ownerUid) {
+      setEvents([]);
+      setLoadError(null);
+      setLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     setLoadError(null);
 
     if (hasLoaded) {
@@ -279,18 +340,19 @@ export default function AgendasPage() {
       setEvents(allEvents.filter((event) => event.status !== 'cancelled'));
     } catch (error) {
       console.error('Erro ao carregar eventos:', error);
-      setLoadError('Não foi possível carregar os eventos da agenda.');
+      setLoadError('Nao foi possivel carregar os eventos da agenda.');
       toast.error('Erro ao carregar eventos');
     } finally {
       setLoading(false);
       setIsRefreshing(false);
       setHasLoaded(true);
     }
-  }, [hasLoaded, ownerUid]);
+  }, [authLoading, hasLoaded, ownerUid]);
 
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    if (authLoading) return;
+    void loadEvents();
+  }, [authLoading, loadEvents]);
 
   const calendarEvents: EventInput[] = useMemo(() => {
     return events.map((event) => {
@@ -405,6 +467,8 @@ export default function AgendasPage() {
 
   const handleEventSave = useCallback(
     async (eventData: CalendarEvent) => {
+      if (!ownerUid) return;
+
       try {
         if (eventData.id) {
           await calendarEventRepository.update(eventData.id, eventData, ownerUid);
@@ -425,6 +489,8 @@ export default function AgendasPage() {
 
   const cancelEvent = useCallback(
     async (eventId: string) => {
+      if (!ownerUid) return;
+
       await calendarEventRepository.update(eventId, { status: 'cancelled' }, ownerUid);
       toast.success('Evento cancelado');
       await loadEvents();
@@ -580,11 +646,30 @@ export default function AgendasPage() {
         subtitle="Gerencie reunioes e compromissos"
         actions={(
           <div className="flex items-center gap-2">
-            <IconButton
-              icon={<Bell className="w-5 h-5" />}
-              label="Abrir notificacoes"
-              onClick={() => setNotificationPanelOpen((prev) => !prev)}
-            />
+            <div className="relative" ref={notificationDropdownRef}>
+              <IconButton
+                ref={notificationTriggerRef}
+                icon={<Bell className="w-5 h-5" />}
+                label="Abrir notificacoes"
+                onClick={() => setNotificationPanelOpen((prev) => !prev)}
+                aria-haspopup="dialog"
+                aria-expanded={notificationPanelOpen}
+                aria-controls={notificationPanelOpen ? 'agendas-notification-panel' : undefined}
+              />
+              {notificationPanelOpen && (
+                <div
+                  id="agendas-notification-panel"
+                  ref={notificationPanelRef}
+                  role="dialog"
+                  aria-label="Painel de notificacoes"
+                  className="absolute right-0 top-[calc(100%+0.5rem)] z-[var(--z-toast)] w-[min(26rem,calc(100vw-2rem))] pointer-events-auto"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <NotificationPanel onClose={() => setNotificationPanelOpen(false)} />
+                </div>
+              )}
+            </div>
             <Button
               variant="ghost"
               leftIcon={<RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />}
@@ -614,10 +699,6 @@ export default function AgendasPage() {
         onCustomDateChange={setCustomDateRange}
       />
 
-      {notificationPanelOpen && (
-        <NotificationPanel onClose={() => setNotificationPanelOpen(false)} />
-      )}
-
       <div
         className="rounded-xl shadow-sm p-4 space-y-4"
         style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}
@@ -645,9 +726,9 @@ export default function AgendasPage() {
               size="sm"
               rightIcon={<ChevronRight className="w-4 h-4" />}
               onClick={handleNext}
-              aria-label="Próximo período"
+              aria-label="Proximo periodo"
             >
-              Próximo
+              Proximo
             </Button>
             <h2
               className="text-lg font-semibold ml-1"
@@ -680,7 +761,7 @@ export default function AgendasPage() {
           <>
             {!loadError && visibleEvents.length === 0 && (
               <InlineEmpty
-                message="Nenhum evento no período visível."
+                message="Nenhum evento no periodo visivel."
                 action={canManageEvents ? { label: 'Criar evento', onClick: () => openCreateModal() } : undefined}
               />
             )}

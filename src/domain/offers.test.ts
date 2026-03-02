@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canAcceptNewReservations,
   deriveLegacyReservationFlags,
+  isLiquidationMomentExpired,
   isLiquidated,
+  isReservationWindowExpired,
   normalizeCompetenceMonth,
   normalizeOfferAssetClass,
   normalizeOfferAudience,
@@ -17,6 +20,8 @@ describe('offer normalization helpers', () => {
   it('normalizes status values and legacy flags', () => {
     expect(normalizeOfferStatus('liquidada')).toBe('LIQUIDADA');
     expect(normalizeOfferStatus('cancelled')).toBe('CANCELADA');
+    expect(normalizeOfferStatus('reservada', { reservaLiquidada: true })).toBe('RESERVADA');
+    expect(normalizeOfferStatus('pendente', { reservaEfetuada: true })).toBe('PENDENTE');
     expect(normalizeOfferStatus(undefined, { reservaEfetuada: true })).toBe('RESERVADA');
     expect(normalizeOfferStatus(undefined, { reservaLiquidada: true })).toBe('LIQUIDADA');
   });
@@ -52,5 +57,70 @@ describe('offer normalization helpers', () => {
     expect(isLiquidated({ status: 'CANCELADA', dataLiquidacao: '2026-02-10' })).toBe(false);
     expect(isLiquidated({ status: 'CANCELADA', reservaLiquidada: true })).toBe(false);
     expect(isLiquidated({ status: 'PENDENTE' })).toBe(false);
+  });
+
+  it('handles reservation window in Sao Paulo timezone with end-of-day validity', () => {
+    const now = new Date('2026-02-10T15:00:00.000Z');
+    const nowAfterDateEnd = new Date('2026-02-11T03:30:00.000Z');
+
+    expect(isReservationWindowExpired('2026-02-10', now)).toBe(false);
+    expect(isReservationWindowExpired('10/02/2026', now)).toBe(false);
+    expect(isReservationWindowExpired('2026-02-09', now)).toBe(true);
+    expect(isReservationWindowExpired('10/02/2026', nowAfterDateEnd)).toBe(true);
+
+    expect(canAcceptNewReservations({ status: 'PENDENTE', reservationEndDate: '2026-02-10' }, now)).toBe(true);
+    expect(canAcceptNewReservations({ status: 'PENDENTE', reservationEndDate: '2026-02-09' }, now)).toBe(false);
+    expect(canAcceptNewReservations({ status: 'LIQUIDADA', reservationEndDate: '2099-12-31' }, now)).toBe(false);
+  });
+
+  it('locks by liquidation moment only when now is after liquidationAt', () => {
+    const now = new Date('2026-02-10T15:00:00.000Z');
+
+    expect(isLiquidationMomentExpired('2026-02-12', now)).toBe(false);
+    expect(isLiquidationMomentExpired('2026-02-10', now)).toBe(false);
+    expect(isLiquidationMomentExpired('2026-02-09', now)).toBe(true);
+    expect(isLiquidationMomentExpired('10/02/2026 11:00', now)).toBe(true);
+    expect(isLiquidationMomentExpired({ seconds: 1893456000 }, now)).toBe(false);
+
+    expect(canAcceptNewReservations({ status: 'RESERVADA', liquidationDate: '2026-02-12' }, now)).toBe(true);
+    expect(canAcceptNewReservations({ status: 'RESERVADA', liquidationDate: '2026-02-09' }, now)).toBe(false);
+  });
+
+  it('applies lock matrix: status, reservation end, and liquidation moment', () => {
+    const now = new Date('2026-02-10T15:00:00.000Z');
+
+    expect(canAcceptNewReservations({
+      status: 'RESERVADA',
+      reservationEndDate: '2026-02-20',
+      liquidationDate: '2026-02-25',
+    }, now)).toBe(true);
+
+    expect(canAcceptNewReservations({
+      status: 'RESERVADA',
+      reservationEndDate: '2026-02-09',
+    }, now)).toBe(false);
+
+    expect(canAcceptNewReservations({
+      status: 'RESERVADA',
+      liquidationDate: '2026-02-09',
+    }, now)).toBe(false);
+
+    expect(canAcceptNewReservations({
+      status: 'RESERVADA',
+      reservationEndDate: '2026-02-20',
+      liquidationDate: '2026-02-09',
+    }, now)).toBe(false);
+
+    expect(canAcceptNewReservations({
+      status: 'LIQUIDADA',
+      reservationEndDate: '2099-12-31',
+      liquidationDate: '2099-12-31',
+    }, now)).toBe(false);
+
+    expect(canAcceptNewReservations({
+      status: 'CANCELADA',
+      reservationEndDate: '2099-12-31',
+      liquidationDate: '2099-12-31',
+    }, now)).toBe(false);
   });
 });

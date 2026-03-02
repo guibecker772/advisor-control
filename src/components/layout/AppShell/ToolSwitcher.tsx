@@ -83,7 +83,7 @@ export default function ToolSwitcher() {
               const isActive = tool.id === activeTool;
               const isAvailable = isToolEnabled(tool.id);
               const useNativeDisabled = !isAvailable && tool.id !== 'wealth';
-              const disabledTooltip = tool.id === 'wealth' && !isAvailable ? 'URL não configurada' : undefined;
+              const disabledTooltip = tool.id === 'wealth' && !isAvailable ? 'URL nao configurada' : undefined;
               const buttonAriaLabel =
                 tool.id === 'wealth' && isAvailable ? 'Abrir Private Wealth' : `Selecionar ${tool.name}`;
 

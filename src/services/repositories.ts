@@ -1,5 +1,4 @@
 import {
-  collection,
   deleteDoc,
   doc,
   getDoc,
@@ -9,7 +8,6 @@ import {
   where,
   type CollectionReference,
   type DocumentData,
-  type DocumentReference,
   type Firestore,
 } from 'firebase/firestore';
 
@@ -33,7 +31,8 @@ import type {
   EventReminder,
   Notification,
 } from '../domain/types/calendar';
-import { repairMojibakePayload } from '../lib/encodingRepair';
+import { repairMojibakePayload } from '../lib/mojibake';
+import { userCollection, userDoc } from './userPath';
 
 type RepositoryEntity = {
   id?: string;
@@ -95,6 +94,12 @@ function parseTimestamp(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function resolveOwnerUid(ownerUid: string | null | undefined): string | null {
+  if (typeof ownerUid !== 'string') return null;
+  const normalized = ownerUid.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function sortByUpdatedAtDesc<T extends RepositoryEntity>(data: T[]): T[] {
   return [...data].sort((a, b) => parseTimestamp(b.updatedAt) - parseTimestamp(a.updatedAt));
 }
@@ -126,21 +131,6 @@ function toTypedEntity<T extends RepositoryEntity>(data: DocumentData, id: strin
   } as T;
 }
 
-async function repairFirestoreEntity<T extends RepositoryEntity>(
-  id: string,
-  ownerUid: string,
-  rawData: DocumentData,
-  documentRef: DocumentReference<DocumentData>,
-): Promise<T> {
-  const repaired = repairMojibakePayload(rawData);
-
-  if (repaired.changed) {
-    await setDoc(documentRef, stripUndefined(repaired.value) as DocumentData, { merge: true });
-  }
-
-  return toTypedEntity<T>(repaired.value as DocumentData, id, ownerUid);
-}
-
 let firestorePromise: Promise<Firestore> | null = null;
 
 async function getFirestoreDb(): Promise<Firestore> {
@@ -164,8 +154,8 @@ async function getCollectionRef(
   ownerUid: string,
   collectionName: string,
 ): Promise<CollectionReference<DocumentData>> {
-  const database = await getFirestoreDb();
-  return collection(database, 'users', ownerUid, collectionName);
+  await getFirestoreDb();
+  return userCollection(ownerUid, collectionName);
 }
 
 function getStorageKey(collectionName: string, ownerUid: string): string {
@@ -193,14 +183,7 @@ function saveLocalData<T extends RepositoryEntity>(collectionName: string, owner
 async function getAllFirestore<T extends RepositoryEntity>(collectionName: string, ownerUid: string): Promise<T[]> {
   const ref = await getCollectionRef(ownerUid, collectionName);
   const snapshot = await getDocs(ref);
-  const items = await Promise.all(
-    snapshot.docs.map((docSnapshot) => repairFirestoreEntity<T>(
-      docSnapshot.id,
-      ownerUid,
-      docSnapshot.data(),
-      docSnapshot.ref,
-    )),
-  );
+  const items = snapshot.docs.map((docSnapshot) => toTypedEntity<T>(docSnapshot.data(), docSnapshot.id, ownerUid));
   return sortByUpdatedAtDesc(items);
 }
 
@@ -209,15 +192,14 @@ async function getByIdFirestore<T extends RepositoryEntity>(
   id: string,
   ownerUid: string,
 ): Promise<T | null> {
-  const ref = await getCollectionRef(ownerUid, collectionName);
-  const documentRef = doc(ref, id);
+  const documentRef = userDoc(ownerUid, collectionName, id);
   const snapshot = await getDoc(documentRef);
 
   if (!snapshot.exists()) {
     return null;
   }
 
-  return repairFirestoreEntity<T>(snapshot.id, ownerUid, snapshot.data(), snapshot.ref);
+  return toTypedEntity<T>(snapshot.data(), snapshot.id, ownerUid);
 }
 
 async function createFirestore<T extends RepositoryEntity>(
@@ -228,9 +210,8 @@ async function createFirestore<T extends RepositoryEntity>(
   const ref = await getCollectionRef(ownerUid, collectionName);
   const documentRef = doc(ref);
   const now = nowIso();
-  const repairedInput = repairMojibakePayload(inputData).value;
   const newItem = {
-    ...(repairedInput as Record<string, unknown>),
+    ...(inputData as Record<string, unknown>),
     id: documentRef.id,
     ownerUid,
     createdAt: now,
@@ -247,8 +228,7 @@ async function updateFirestore<T extends RepositoryEntity>(
   updateData: Partial<T>,
   ownerUid: string,
 ): Promise<T | null> {
-  const ref = await getCollectionRef(ownerUid, collectionName);
-  const documentRef = doc(ref, id);
+  const documentRef = userDoc(ownerUid, collectionName, id);
   const snapshot = await getDoc(documentRef);
 
   if (!snapshot.exists()) {
@@ -257,10 +237,9 @@ async function updateFirestore<T extends RepositoryEntity>(
 
   const existingData = snapshot.data() as Record<string, unknown>;
   const now = nowIso();
-  const repairedUpdateData = repairMojibakePayload(updateData).value;
   const updatedItem = {
     ...existingData,
-    ...(repairedUpdateData as Record<string, unknown>),
+    ...(updateData as Record<string, unknown>),
     id,
     ownerUid,
     createdAt: (existingData.createdAt as string | undefined) || now,
@@ -272,8 +251,7 @@ async function updateFirestore<T extends RepositoryEntity>(
 }
 
 async function deleteFirestore(collectionName: string, id: string, ownerUid: string): Promise<boolean> {
-  const ref = await getCollectionRef(ownerUid, collectionName);
-  const documentRef = doc(ref, id);
+  const documentRef = userDoc(ownerUid, collectionName, id);
   const snapshot = await getDoc(documentRef);
 
   if (!snapshot.exists()) {
@@ -294,14 +272,7 @@ async function queryBySingleFieldFirestore<T extends RepositoryEntity>(
 
   try {
     const snapshot = await getDocs(query(ref, where(field, '==', value)));
-    const items = await Promise.all(
-      snapshot.docs.map((docSnapshot) => repairFirestoreEntity<T>(
-        docSnapshot.id,
-        ownerUid,
-        docSnapshot.data(),
-        docSnapshot.ref,
-      )),
-    );
+    const items = snapshot.docs.map((docSnapshot) => toTypedEntity<T>(docSnapshot.data(), docSnapshot.id, ownerUid));
     return sortByUpdatedAtDesc(items);
   } catch (error) {
     console.warn(`[repositories] Firestore query fallback (${collectionName}.${field}):`, error);
@@ -321,14 +292,7 @@ async function getByMonthFirestore<T extends RepositoryEntity>(
   try {
     // This query may require a composite index on (mes, ano) depending on Firestore settings.
     const snapshot = await getDocs(query(ref, where('mes', '==', mes), where('ano', '==', ano)));
-    const items = await Promise.all(
-      snapshot.docs.map((docSnapshot) => repairFirestoreEntity<T>(
-        docSnapshot.id,
-        ownerUid,
-        docSnapshot.data(),
-        docSnapshot.ref,
-      )),
-    );
+    const items = snapshot.docs.map((docSnapshot) => toTypedEntity<T>(docSnapshot.data(), docSnapshot.id, ownerUid));
     return sortByUpdatedAtDesc(items);
   } catch (error) {
     console.warn(`[repositories] Firestore month query fallback (${collectionName}):`, error);
@@ -357,120 +321,186 @@ export function createRepository<
   },
 >(collectionName: string) {
   return {
-    async getAll(ownerUid: string): Promise<T[]> {
+    async getAll(ownerUid: string | null | undefined): Promise<T[]> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return [];
+
       if (isLocalDataDriver) {
-        return loadLocalData<T>(collectionName, ownerUid);
+        return loadLocalData<T>(collectionName, resolvedOwnerUid);
       }
 
-      return getAllFirestore<T>(collectionName, ownerUid);
+      return getAllFirestore<T>(collectionName, resolvedOwnerUid);
     },
 
-    async getById(id: string, ownerUid: string): Promise<T | null> {
+    async getById(id: string, ownerUid: string | null | undefined): Promise<T | null> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return null;
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         return data.find((item) => item.id === id) || null;
       }
 
-      return getByIdFirestore<T>(collectionName, id, ownerUid);
+      return getByIdFirestore<T>(collectionName, id, resolvedOwnerUid);
     },
 
-    async create(inputData: Omit<T, 'id'>, ownerUid: string): Promise<T> {
+    async create(inputData: Omit<T, 'id'>, ownerUid: string | null | undefined): Promise<T> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) {
+        throw new Error('AUTH_REQUIRED');
+      }
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         const now = nowIso();
-        const repairedInput = repairMojibakePayload(inputData).value;
         const newItem = {
-          ...(repairedInput as Record<string, unknown>),
+          ...(inputData as Record<string, unknown>),
           id: generateId(),
-          ownerUid,
+          ownerUid: resolvedOwnerUid,
           createdAt: now,
           updatedAt: now,
         } as unknown as T;
 
         data.push(newItem);
-        saveLocalData(collectionName, ownerUid, data);
+        saveLocalData(collectionName, resolvedOwnerUid, data);
         return newItem;
       }
 
-      return createFirestore<T>(collectionName, inputData, ownerUid);
+      return createFirestore<T>(collectionName, inputData, resolvedOwnerUid);
     },
 
-    async update(id: string, updateData: Partial<T>, ownerUid: string): Promise<T | null> {
+    async update(id: string, updateData: Partial<T>, ownerUid: string | null | undefined): Promise<T | null> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return null;
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         const index = data.findIndex((item) => item.id === id);
         if (index === -1) return null;
-        const repairedUpdateData = repairMojibakePayload(updateData).value;
 
         const updated = {
           ...(data[index] as Record<string, unknown>),
-          ...(repairedUpdateData as Record<string, unknown>),
+          ...(updateData as Record<string, unknown>),
           updatedAt: nowIso(),
         } as unknown as T;
 
         data[index] = updated;
-        saveLocalData(collectionName, ownerUid, data);
+        saveLocalData(collectionName, resolvedOwnerUid, data);
         return updated;
       }
 
-      return updateFirestore<T>(collectionName, id, updateData, ownerUid);
+      return updateFirestore<T>(collectionName, id, updateData, resolvedOwnerUid);
     },
 
-    async delete(id: string, ownerUid: string): Promise<boolean> {
+    async delete(id: string, ownerUid: string | null | undefined): Promise<boolean> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return false;
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         const index = data.findIndex((item) => item.id === id);
         if (index === -1) return false;
 
         data.splice(index, 1);
-        saveLocalData(collectionName, ownerUid, data);
+        saveLocalData(collectionName, resolvedOwnerUid, data);
         return true;
       }
 
-      return deleteFirestore(collectionName, id, ownerUid);
+      return deleteFirestore(collectionName, id, resolvedOwnerUid);
     },
 
-    async getByMonth(ownerUid: string, mes: number, ano: number): Promise<T[]> {
+    async getByMonth(ownerUid: string | null | undefined, mes: number, ano: number): Promise<T[]> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return [];
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         return data.filter((item) => item.mes === mes && item.ano === ano);
       }
 
-      return getByMonthFirestore<T>(collectionName, ownerUid, mes, ano);
+      return getByMonthFirestore<T>(collectionName, resolvedOwnerUid, mes, ano);
     },
 
-    async getByYear(ownerUid: string, ano: number): Promise<T[]> {
+    async getByYear(ownerUid: string | null | undefined, ano: number): Promise<T[]> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return [];
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         return data
           .filter((item) => item.ano === ano)
           .sort((a, b) => (a.mes || 0) - (b.mes || 0));
       }
 
-      return getByYearFirestore<T>(collectionName, ownerUid, ano);
+      return getByYearFirestore<T>(collectionName, resolvedOwnerUid, ano);
     },
 
-    async getByStatus(ownerUid: string, status: string): Promise<T[]> {
+    async getByStatus(ownerUid: string | null | undefined, status: string): Promise<T[]> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return [];
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         return data.filter((item) => item.status === status);
       }
 
-      return queryBySingleFieldFirestore<T>(collectionName, ownerUid, 'status', status);
+      return queryBySingleFieldFirestore<T>(collectionName, resolvedOwnerUid, 'status', status);
     },
 
-    async getByCliente(ownerUid: string, clienteId: string): Promise<T[]> {
+    async getByCliente(ownerUid: string | null | undefined, clienteId: string): Promise<T[]> {
+      const resolvedOwnerUid = resolveOwnerUid(ownerUid);
+      if (!resolvedOwnerUid) return [];
+
       if (isLocalDataDriver) {
-        const data = loadLocalData<T>(collectionName, ownerUid);
+        const data = loadLocalData<T>(collectionName, resolvedOwnerUid);
         return data.filter((item) => item.clienteId === clienteId);
       }
 
-      return queryBySingleFieldFirestore<T>(collectionName, ownerUid, 'clienteId', clienteId);
+      return queryBySingleFieldFirestore<T>(collectionName, resolvedOwnerUid, 'clienteId', clienteId);
     },
   };
 }
 
-export const clienteRepository = createRepository<Cliente>('clientes');
+function hasOwnerUid(ownerUid: string | null | undefined): boolean {
+  return typeof ownerUid === 'string' && ownerUid.trim().length > 0;
+}
+
+const clientePrimaryRepository = createRepository<Cliente>('clientes');
+const clienteLegacyRepository = createRepository<Cliente>('clients');
+
+export const clienteRepository: typeof clientePrimaryRepository = {
+  ...clientePrimaryRepository,
+  async getAll(ownerUid) {
+    const primary = await clientePrimaryRepository.getAll(ownerUid);
+    if (primary.length > 0 || !hasOwnerUid(ownerUid)) return primary;
+    return clienteLegacyRepository.getAll(ownerUid);
+  },
+  async getById(id, ownerUid) {
+    const primary = await clientePrimaryRepository.getById(id, ownerUid);
+    if (primary || !hasOwnerUid(ownerUid)) return primary;
+    return clienteLegacyRepository.getById(id, ownerUid);
+  },
+  async getByMonth(ownerUid, mes, ano) {
+    const primary = await clientePrimaryRepository.getByMonth(ownerUid, mes, ano);
+    if (primary.length > 0 || !hasOwnerUid(ownerUid)) return primary;
+    return clienteLegacyRepository.getByMonth(ownerUid, mes, ano);
+  },
+  async getByYear(ownerUid, ano) {
+    const primary = await clientePrimaryRepository.getByYear(ownerUid, ano);
+    if (primary.length > 0 || !hasOwnerUid(ownerUid)) return primary;
+    return clienteLegacyRepository.getByYear(ownerUid, ano);
+  },
+  async getByStatus(ownerUid, status) {
+    const primary = await clientePrimaryRepository.getByStatus(ownerUid, status);
+    if (primary.length > 0 || !hasOwnerUid(ownerUid)) return primary;
+    return clienteLegacyRepository.getByStatus(ownerUid, status);
+  },
+  async getByCliente(ownerUid, clienteId) {
+    const primary = await clientePrimaryRepository.getByCliente(ownerUid, clienteId);
+    if (primary.length > 0 || !hasOwnerUid(ownerUid)) return primary;
+    return clienteLegacyRepository.getByCliente(ownerUid, clienteId);
+  },
+};
 export const clienteReuniaoRepository = createRepository<ClienteReuniao>('cliente_reunioes');
 export const prospectRepository = createRepository<Prospect>('prospects');
 export const prospectInteracaoRepository = createRepository<ProspectInteracao>('prospect_interacoes');

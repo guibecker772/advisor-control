@@ -20,10 +20,12 @@ import {
 } from '../../domain/calculations';
 import { DataTable, CurrencyCell, PercentCell, ActionButtons } from '../../components/shared/DataTable';
 import { Modal, ConfirmDelete } from '../../components/shared/Modal';
-import { Input, Select, PeriodFilter } from '../../components/shared/FormFields';
+import { Input, PeriodFilter } from '../../components/shared/FormFields';
+import ClientSelect from '../../components/clientes/ClientSelect';
 
 export default function CustodiaReceitaPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [registros, setRegistros] = useState<CustodiaReceita[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [ofertas, setOfertas] = useState<OfferReservation[]>([]);
@@ -42,6 +44,7 @@ export default function CustodiaReceitaPage() {
     handleSubmit,
     reset,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<CustodiaReceitaInput>({
     resolver: zodResolver(custodiaReceitaSchema),
@@ -75,15 +78,22 @@ export default function CustodiaReceitaPage() {
   }, [watchedValues]);
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setRegistros([]);
+      setClientes([]);
+      setOfertas([]);
+      setLoading(false);
+      return;
+    }
 
     const loadData = async () => {
       try {
         setLoading(true);
         const [registroData, clienteData, ofertasData] = await Promise.all([
-          custodiaReceitaRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
-          clienteRepository.getAll(user.uid),
-          offerReservationRepository.getAll(user.uid),
+          custodiaReceitaRepository.getByMonth(ownerUid, mesFiltro, anoFiltro),
+          clienteRepository.getAll(ownerUid),
+          offerReservationRepository.getAll(ownerUid),
         ]);
         setRegistros(registroData);
         setClientes(clienteData);
@@ -97,7 +107,7 @@ export default function CustodiaReceitaPage() {
     };
 
     loadData();
-  }, [user, mesFiltro, anoFiltro]);
+  }, [authLoading, ownerUid, mesFiltro, anoFiltro]);
 
   // Receita derivada das Ofertas/Reservas liquidadas no mês/ano
   const receitaOfertas = useMemo(() => {
@@ -117,7 +127,7 @@ export default function CustodiaReceitaPage() {
 
   // Handler para aplicar valores automáticos
   const aplicarValoresAutomaticos = async () => {
-    if (!user) return;
+    if (!ownerUid) return;
     try {
       setSaving(true);
       
@@ -132,7 +142,7 @@ export default function CustodiaReceitaPage() {
             custodiaFim: custodiaSugerida,
             // Nota: receita de ofertas é derivada, não gravamos duplicado
           },
-          user.uid
+          ownerUid
         );
         if (updated) {
           setRegistros((prev) => prev.map((r) => (r.id === registroGeral.id ? updated : r)));
@@ -156,7 +166,7 @@ export default function CustodiaReceitaPage() {
             receitaPrevidencia: 0,
             receitaOutros: 0,
           },
-          user.uid
+          ownerUid
         );
         setRegistros((prev) => [...prev, created]);
       }
@@ -170,10 +180,17 @@ export default function CustodiaReceitaPage() {
     }
   };
 
-  const clienteOptions = useMemo(
+  const clientSelectOptions = useMemo(
     () => [
-      { value: '', label: 'Geral (sem cliente)' },
-      ...clientes.map((c) => ({ value: c.id || '', label: c.nome })),
+      { value: '', label: 'Geral (sem cliente)', hint: 'Registro agregado do período' },
+      ...clientes
+        .filter((c) => Boolean(c.id))
+        .map((c) => ({
+          value: c.id || '',
+          label: c.nome,
+          hint: [c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' | '),
+          searchText: [c.nome, c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' '),
+        })),
     ],
     [clientes]
   );
@@ -204,7 +221,7 @@ export default function CustodiaReceitaPage() {
   };
 
   const onSubmit = async (data: CustodiaReceitaInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setSaving(true);
@@ -217,7 +234,7 @@ export default function CustodiaReceitaPage() {
       };
 
       if (selectedRegistro?.id) {
-        const updated = await custodiaReceitaRepository.update(selectedRegistro.id, dataWithCliente, user.uid);
+        const updated = await custodiaReceitaRepository.update(selectedRegistro.id, dataWithCliente, ownerUid);
         if (updated) {
           setRegistros((prev) =>
             prev.map((r) => (r.id === selectedRegistro.id ? updated : r))
@@ -225,7 +242,7 @@ export default function CustodiaReceitaPage() {
           toast.success('Registro atualizado com sucesso!');
         }
       } else {
-        const created = await custodiaReceitaRepository.create(dataWithCliente, user.uid);
+        const created = await custodiaReceitaRepository.create(dataWithCliente, ownerUid);
         setRegistros((prev) => [...prev, created]);
         toast.success('Registro criado com sucesso!');
       }
@@ -241,11 +258,11 @@ export default function CustodiaReceitaPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedRegistro?.id) return;
+    if (!ownerUid || !selectedRegistro?.id) return;
 
     try {
       setSaving(true);
-      await custodiaReceitaRepository.delete(selectedRegistro.id, user.uid);
+      await custodiaReceitaRepository.delete(selectedRegistro.id, ownerUid);
       setRegistros((prev) => prev.filter((r) => r.id !== selectedRegistro.id));
       toast.success('Registro excluído com sucesso!');
       setDeleteModalOpen(false);
@@ -458,11 +475,16 @@ export default function CustodiaReceitaPage() {
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Select
+            <ClientSelect
               label="Cliente"
-              options={clienteOptions}
-              {...register('clienteId')}
+              value={watchedValues.clienteId || ''}
+              options={clientSelectOptions}
+              loading={loading}
+              onChange={(nextValue) => {
+                setValue('clienteId', nextValue, { shouldDirty: true, shouldValidate: true });
+              }}
               error={errors.clienteId?.message}
+              placeholder="Selecione o cliente"
             />
             <Input
               label="Mês"

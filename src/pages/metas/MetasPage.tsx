@@ -28,7 +28,8 @@ import {
 import { monthlyGoalsSchema, type MonthlyGoals, type MonthlyGoalsInput } from '../../domain/types';
 
 export default function MetasPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [existingGoal, setExistingGoal] = useState<MonthlyGoals | null>(null);
@@ -58,13 +59,23 @@ export default function MetasPage() {
 
   // Carregar dados do mês
   const loadData = useCallback(async () => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setExistingGoal(null);
+      setRealizados({
+        receita: 0,
+        captacaoLiquida: 0,
+        transferenciaXp: 0,
+      });
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
       
       // Carregar metas do mês
-      const goals = await monthlyGoalsRepository.getByMonth(user.uid, mesFiltro, anoFiltro);
+      const goals = await monthlyGoalsRepository.getByMonth(ownerUid, mesFiltro, anoFiltro);
       const goal = goals.length > 0 ? goals[0] : null;
       setExistingGoal(goal);
       
@@ -91,10 +102,10 @@ export default function MetasPage() {
       // Carregar dados para cálculo de realizados
       // Cross usa getAll pois o filtro por mês/ano é feito em calcularCrossRealizadoMensal usando dataVenda
       const [custodiaReceita, captacoes, ofertas, crosses] = await Promise.all([
-        custodiaReceitaRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
-        captacaoLancamentoRepository.getByMonth(user.uid, mesFiltro, anoFiltro),
-        offerReservationRepository.getAll(user.uid),
-        crossRepository.getAll(user.uid),
+        custodiaReceitaRepository.getByMonth(ownerUid, mesFiltro, anoFiltro),
+        captacaoLancamentoRepository.getByMonth(ownerUid, mesFiltro, anoFiltro),
+        offerReservationRepository.getAll(ownerUid),
+        crossRepository.getAll(ownerUid),
       ]);
 
       // Calcular realizados (inclui Custódia + Ofertas + Cross + Captação persistida)
@@ -107,17 +118,19 @@ export default function MetasPage() {
     } finally {
       setLoading(false);
     }
-  }, [anoFiltro, mesFiltro, reset, user]);
+  }, [anoFiltro, authLoading, mesFiltro, ownerUid, reset]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadData();
-  }, [loadData]);
+  }, [authLoading, loadData]);
 
   useEffect(() => {
+    if (authLoading || !ownerUid) return;
     return subscribeDataInvalidation(['metas', 'captacao', 'prospects'], async () => {
       await loadData();
     });
-  }, [loadData]);
+  }, [authLoading, loadData, ownerUid]);
 
   // Valores do form para cálculo de percentuais
   const formValues = watch();
@@ -131,7 +144,7 @@ export default function MetasPage() {
 
   // Salvar metas
   const onSubmit = async (data: MonthlyGoalsInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
     
     try {
       setSaving(true);
@@ -146,9 +159,9 @@ export default function MetasPage() {
       };
       
       if (existingGoal?.id) {
-        await monthlyGoalsRepository.update(existingGoal.id, payload, user.uid);
+        await monthlyGoalsRepository.update(existingGoal.id, payload, ownerUid);
       } else {
-        const created = await monthlyGoalsRepository.create(payload, user.uid);
+        const created = await monthlyGoalsRepository.create(payload, ownerUid);
         setExistingGoal(created);
       }
       

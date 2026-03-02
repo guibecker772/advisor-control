@@ -155,7 +155,8 @@ function getProspectById(prospects: Prospect[], id: string | null): Prospect | u
 }
 
 export default function ProspectsPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [searchParams, setSearchParams] = useSearchParams();
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [interacoes, setInteracoes] = useState<ProspectInteracao[]>([]);
@@ -190,13 +191,19 @@ export default function ProspectsPage() {
   });
 
   const loadData = useCallback(async () => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setProspects([]);
+      setInteracoes([]);
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
       const [prospectsData, interacoesData] = await Promise.all([
-        prospectRepository.getAll(user.uid),
-        prospectInteracaoRepository.getAll(user.uid),
+        prospectRepository.getAll(ownerUid),
+        prospectInteracaoRepository.getAll(ownerUid),
       ]);
       setProspects(prospectsData);
       setInteracoes(interacoesData);
@@ -206,17 +213,19 @@ export default function ProspectsPage() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [authLoading, ownerUid]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadData();
-  }, [loadData]);
+  }, [authLoading, loadData]);
 
   useEffect(() => {
+    if (authLoading || !ownerUid) return;
     return subscribeDataInvalidation(['prospects'], async () => {
       await loadData();
     });
-  }, [loadData]);
+  }, [authLoading, loadData, ownerUid]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -337,7 +346,7 @@ export default function ProspectsPage() {
   }, [loading, openModal, openProspectDetails, prospects, searchParams, setSearchParams]);
 
   const onSubmit = async (data: ProspectInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setSaving(true);
@@ -355,7 +364,7 @@ export default function ProspectsPage() {
         prospectId: selectedProspect?.id,
         data: parsed,
       }, {
-        ownerUid: user.uid,
+        ownerUid,
       });
 
       // Determine the effective status for filter auto-switch
@@ -400,11 +409,11 @@ export default function ProspectsPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedProspect?.id) return;
+    if (!ownerUid || !selectedProspect?.id) return;
 
     try {
       setSaving(true);
-      await prospectRepository.delete(selectedProspect.id, user.uid);
+      await prospectRepository.delete(selectedProspect.id, ownerUid);
       setProspects((prev) => prev.filter((p) => p.id !== selectedProspect.id));
       toastSuccess('Prospect excluído com sucesso!');
       emitDataInvalidation(['prospects', 'clients', 'captacao', 'metas', 'dashboard']);
@@ -1189,7 +1198,6 @@ function ProspectDetalhesModal({
     </Modal>
   );
 }
-
 
 
 

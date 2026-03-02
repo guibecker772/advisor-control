@@ -22,7 +22,8 @@ import { Modal, ConfirmDelete } from '../../components/shared/Modal';
 import { Input, TextArea } from '../../components/shared/FormFields';
 
 export default function PlanoReceitasPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
   const [planos, setPlanos] = useState<PlanoReceitas[]>([]);
   const [realizados, setRealizados] = useState<CustodiaReceita[]>([]);
   const [captacoes, setCaptacoes] = useState<CaptacaoLancamento[]>([]);
@@ -73,16 +74,24 @@ export default function PlanoReceitasPage() {
   }, [watchedValues]);
 
   useEffect(() => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setPlanos([]);
+      setRealizados([]);
+      setCaptacoes([]);
+      setCrosses([]);
+      setLoading(false);
+      return;
+    }
 
     const loadData = async () => {
       try {
         setLoading(true);
         const [planoData, realizadoData, captacaoData, crossData] = await Promise.all([
-          planoReceitasRepository.getByYear(user.uid, anoFiltro),
-          custodiaReceitaRepository.getByYear(user.uid, anoFiltro),
-          captacaoLancamentoRepository.getByYear(user.uid, anoFiltro),
-          crossRepository.getAll(user.uid),
+          planoReceitasRepository.getByYear(ownerUid, anoFiltro),
+          custodiaReceitaRepository.getByYear(ownerUid, anoFiltro),
+          captacaoLancamentoRepository.getByYear(ownerUid, anoFiltro),
+          crossRepository.getAll(ownerUid),
         ]);
         setPlanos(planoData);
         setRealizados(realizadoData);
@@ -107,7 +116,7 @@ export default function PlanoReceitasPage() {
     };
 
     loadData();
-  }, [user, anoFiltro]);
+  }, [authLoading, ownerUid, anoFiltro]);
 
   const openModal = (plano?: PlanoReceitas) => {
     if (plano) {
@@ -135,7 +144,7 @@ export default function PlanoReceitasPage() {
   };
 
   const onSubmit = async (data: PlanoReceitasInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
 
     try {
       setSaving(true);
@@ -148,7 +157,7 @@ export default function PlanoReceitasPage() {
       };
 
       if (selectedPlano?.id) {
-        const updated = await planoReceitasRepository.update(selectedPlano.id, dataWithTotal, user.uid);
+        const updated = await planoReceitasRepository.update(selectedPlano.id, dataWithTotal, ownerUid);
         if (updated) {
           setPlanos((prev) =>
             prev.map((p) => (p.id === selectedPlano.id ? updated : p))
@@ -156,7 +165,7 @@ export default function PlanoReceitasPage() {
           toast.success('Plano atualizado com sucesso!');
         }
       } else {
-        const created = await planoReceitasRepository.create(dataWithTotal, user.uid);
+        const created = await planoReceitasRepository.create(dataWithTotal, ownerUid);
         setPlanos((prev) => [...prev, created]);
         toast.success('Plano criado com sucesso!');
       }
@@ -172,11 +181,11 @@ export default function PlanoReceitasPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedPlano?.id) return;
+    if (!ownerUid || !selectedPlano?.id) return;
 
     try {
       setSaving(true);
-      await planoReceitasRepository.delete(selectedPlano.id, user.uid);
+      await planoReceitasRepository.delete(selectedPlano.id, ownerUid);
       setPlanos((prev) => prev.filter((p) => p.id !== selectedPlano.id));
       toast.success('Plano excluído com sucesso!');
       setDeleteModalOpen(false);
@@ -191,7 +200,7 @@ export default function PlanoReceitasPage() {
 
   // Auto-preencher Realizado a partir de Custódia x Receita, Captações e Cross
   const handleAutoPreencherRealizado = async () => {
-    if (!user) return;
+    if (!ownerUid) return;
     if (planos.length === 0) {
       toast.error('Nenhum plano cadastrado para auto-preencher');
       return;
@@ -232,7 +241,7 @@ export default function PlanoReceitasPage() {
             realizadoData.realizadoReceitaOutros,
         };
 
-        const result = await planoReceitasRepository.update(plano.id, planoAtualizado, user.uid);
+        const result = await planoReceitasRepository.update(plano.id, planoAtualizado, ownerUid);
         if (result) {
           updatedPlanos.push(result);
           updated++;

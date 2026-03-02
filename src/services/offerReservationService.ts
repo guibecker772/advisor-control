@@ -1,6 +1,7 @@
 import {
+  canAcceptNewReservations,
   deriveLegacyReservationFlags,
-  isLiquidated,
+  normalizeDateOnly as normalizeDateOnlyInSaoPaulo,
   normalizeCompetenceMonth,
   normalizeOfferAssetClass,
   normalizeOfferAudience,
@@ -30,20 +31,15 @@ function getIndexKey(ownerUid: string): string {
 }
 
 function normalizeLiquidationDate(value: unknown): string | undefined {
+  const normalized = normalizeDateOnlyInSaoPaulo(value);
+  if (normalized) return normalized;
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  return trimmed;
+  return trimmed || undefined;
 }
 
 function normalizeDateOnly(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const parsed = new Date(trimmed);
-  if (!Number.isFinite(parsed.getTime())) return undefined;
-  return parsed.toISOString().slice(0, 10);
+  return normalizeDateOnlyInSaoPaulo(value) ?? undefined;
 }
 
 function normalizeText(value: unknown): string | undefined {
@@ -105,23 +101,12 @@ function normalizeAllocations(value: unknown): OfferAllocation[] {
 }
 
 export function normalizeOfferForPersistence(input: OfferReservationInput): OfferReservationInput {
-  const explicitStatus = normalizeOfferStatus(input.status);
-  const normalizedStatus = explicitStatus === 'CANCELADA'
-    ? explicitStatus
-    : normalizeOfferStatus(input.status, {
-      reservaEfetuada: input.reservaEfetuada,
-      reservaLiquidada: input.reservaLiquidada,
-    });
+  const normalizedStatus = normalizeOfferStatus(input.status, {
+    reservaEfetuada: input.reservaEfetuada,
+    reservaLiquidada: input.reservaLiquidada,
+  });
   const liquidationDate = normalizeLiquidationDate(input.liquidationDate ?? input.dataLiquidacao);
-  const status = explicitStatus === 'CANCELADA'
-    ? normalizedStatus
-    : isLiquidated({
-      status: normalizedStatus,
-      liquidationDate,
-      dataLiquidacao: liquidationDate,
-    })
-      ? 'LIQUIDADA'
-      : normalizedStatus;
+  const status = normalizedStatus;
   const legacyFlags = deriveLegacyReservationFlags(status);
   const reserveDate = normalizeDateOnly(input.dataReserva);
   const reservationEndDate = normalizeDateOnly(input.reservationEndDate);
@@ -288,15 +273,13 @@ export interface AddOfferReservationResult {
 }
 
 function isOfferLocked(offer: OfferReservation): boolean {
-  const normalized = normalizeOfferStatus(offer.status, {
+  return !canAcceptNewReservations({
+    status: offer.status,
     reservaEfetuada: offer.reservaEfetuada,
     reservaLiquidada: offer.reservaLiquidada,
-  });
-  if (normalized === 'CANCELADA') return true;
-  return isLiquidated({
-    status: normalized,
     liquidationDate: offer.liquidationDate,
     dataLiquidacao: offer.dataLiquidacao,
+    reservationEndDate: offer.reservationEndDate,
   });
 }
 

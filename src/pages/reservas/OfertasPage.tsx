@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef } from '@tanstack/react-table';
-import { Plus, Users, CheckCircle, Trash2, AlertCircle, X, Edit3, Save, Search, Link as LinkIcon, FileText, CircleAlert } from 'lucide-react';
+import { Plus, Users, CheckCircle, Trash2, AlertCircle, X, Edit3, Save, Link as LinkIcon, FileText, CircleAlert } from 'lucide-react';
 import { toastSuccess, toastError } from '../../lib/toast';
 import { emitDataInvalidation, subscribeDataInvalidation, type InvalidationScope } from '../../lib/dataInvalidation';
 
@@ -28,11 +29,14 @@ import {
   type Cliente,
 } from '../../domain/types';
 import {
+  canAcceptNewReservations,
   formatCompetenceMonthPtBr,
   getCurrentCompetenceMonth,
   getOfferAudienceLabel,
   getOfferStatusLabel,
+  isLiquidationMomentExpired,
   isLiquidated,
+  isReservationWindowExpired,
   normalizeCompetenceMonth,
   normalizeOfferStatus,
 } from '../../domain/offers';
@@ -40,6 +44,7 @@ import { formatCurrency } from '../../domain/calculations';
 import { DataTable, CurrencyCell, ActionButtons } from '../../components/shared/DataTable';
 import { Badge, BaseCard, Button, Modal, ConfirmDialog, PageHeader, PageSkeleton, Tabs, Tooltip } from '../../components/ui';
 import { Input, Select, TextArea } from '../../components/shared/FormFields';
+import ClientSelect from '../../components/clientes/ClientSelect';
 
 // Helpers para conversão decimal <-> percentual na UI
 const toPercentDisplay = (decimal: number | undefined): number => {
@@ -104,13 +109,10 @@ function normalizeEmail(value: string | undefined): string {
   return (value || '').trim().toLowerCase();
 }
 
-function statusIsLocked(status: OfferReservation['status'], flags?: { reservaEfetuada?: boolean; reservaLiquidada?: boolean }): boolean {
-  const normalized = normalizeOfferStatus(status, flags);
-  return normalized === 'LIQUIDADA' || normalized === 'CANCELADA';
-}
-
 export default function OfertasPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const ownerUid = user?.uid;
+  const [searchParams] = useSearchParams();
   const access = useMemo(() => resolveAccessCapabilities(user), [user]);
   const [ofertas, setOfertas] = useState<OfferReservation[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -121,12 +123,19 @@ export default function OfertasPage() {
   const [selectedOferta, setSelectedOferta] = useState<OfferReservation | null>(null);
   const [saving, setSaving] = useState(false);
   const [competenceMonthFiltro, setCompetenceMonthFiltro] = useState<string>(getCurrentCompetenceMonth());
+  const queryCompetenceMonth = searchParams.get('competenceMonth');
+
+  useEffect(() => {
+    if (!queryCompetenceMonth) return;
+    setCompetenceMonthFiltro(normalizeCompetenceMonth(queryCompetenceMonth, new Date().toISOString()));
+  }, [queryCompetenceMonth]);
 
   const {
     register,
     handleSubmit,
     reset,
     watch,
+    setValue,
     control,
     formState: { errors },
   } = useForm<OfferReservationFormInput>({
@@ -161,12 +170,18 @@ export default function OfertasPage() {
   const commissionMode = watch('commissionMode');
 
   const loadData = useCallback(async () => {
-    if (!user) return;
+    if (authLoading) return;
+    if (!ownerUid) {
+      setOfertas([]);
+      setClientes([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const [ofertaData, clienteData] = await Promise.all([
-        listOffers(user.uid),
-        clienteRepository.getAll(user.uid),
+        listOffers(ownerUid),
+        clienteRepository.getAll(ownerUid),
       ]);
       setOfertas(ofertaData);
       setClientes(clienteData);
@@ -176,21 +191,30 @@ export default function OfertasPage() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [authLoading, ownerUid]);
 
   useEffect(() => {
+    if (authLoading) return;
     void loadData();
-  }, [loadData]);
+  }, [authLoading, loadData]);
 
   useEffect(() => {
+    if (authLoading || !ownerUid) return;
     return subscribeDataInvalidation(['offers', 'salary'], async () => {
       await loadData();
     });
-  }, [loadData]);
+  }, [authLoading, loadData, ownerUid]);
 
-  const clienteOptions = useMemo(
-    () => [{ value: '', label: 'Selecione...' }, ...clientes.map((c) => ({ value: c.id || '', label: c.nome }))],
-    [clientes]
+  const clientSelectOptions = useMemo(
+    () => clientes
+      .filter((c) => Boolean(c.id))
+      .map((c) => ({
+        value: c.id || '',
+        label: c.nome,
+        hint: [c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' | '),
+        searchText: [c.nome, c.cpfCnpj, c.codigoConta, c.email, c.telefone].filter(Boolean).join(' '),
+      })),
+    [clientes],
   );
 
   const ofertasFiltradas = useMemo(() => {
@@ -255,7 +279,7 @@ export default function OfertasPage() {
   );
 
   const onSubmit = async (data: OfferReservationFormInput) => {
-    if (!user) return;
+    if (!ownerUid) return;
     try {
       setSaving(true);
       
@@ -281,14 +305,14 @@ export default function OfertasPage() {
       const dataWithClientes = { ...parsed, clientes: clientesEnriquecidos };
 
       if (selectedOferta?.id) {
-        const updated = await updateOfferReservation(selectedOferta.id, dataWithClientes, user.uid);
+        const updated = await updateOfferReservation(selectedOferta.id, dataWithClientes, ownerUid);
         if (updated) {
           await loadData();
           emitDataInvalidation(['offers', 'salary']);
           toastSuccess('Oferta atualizada com sucesso!');
         }
       } else {
-        await createOfferReservation(dataWithClientes, user.uid);
+        await createOfferReservation(dataWithClientes, ownerUid);
         await loadData();
         emitDataInvalidation(['offers', 'salary']);
         toastSuccess('Oferta criada com sucesso!');
@@ -304,10 +328,10 @@ export default function OfertasPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !selectedOferta?.id) return;
+    if (!ownerUid || !selectedOferta?.id) return;
     try {
       setSaving(true);
-      await deleteOfferReservation(selectedOferta.id, user.uid);
+      await deleteOfferReservation(selectedOferta.id, ownerUid);
       await loadData();
       emitDataInvalidation(['offers', 'salary']);
       toastSuccess('Oferta excluída com sucesso!');
@@ -666,40 +690,48 @@ export default function OfertasPage() {
               <p className="text-sm italic" style={{ color: 'var(--color-text-muted)' }}>Nenhum cliente adicionado.</p>
             ) : (
               <div className="space-y-3">
-                {fields.map((field, index) => (
-                  <div key={field.id} className="grid grid-cols-12 gap-2 items-end p-3 rounded" style={{ backgroundColor: 'var(--color-surface-2)' }}>
-                    <div className="col-span-5">
-                      <Select
-                        label="Cliente"
-                        options={clienteOptions}
-                        {...register(`clientes.${index}.clienteId`)}
-                        error={errors.clientes?.[index]?.clienteId?.message}
-                      />
+                {fields.map((field, index) => {
+                  const clienteFieldPath = `clientes.${index}.clienteId` as const;
+                  return (
+                    <div key={field.id} className="grid grid-cols-12 gap-2 items-end p-3 rounded" style={{ backgroundColor: 'var(--color-surface-2)' }}>
+                      <div className="col-span-5">
+                        <ClientSelect
+                          label="Cliente"
+                          value={watch(clienteFieldPath) || ''}
+                          options={clientSelectOptions}
+                          loading={loading}
+                          onChange={(nextValue) => {
+                            setValue(clienteFieldPath, nextValue, { shouldDirty: true, shouldValidate: true });
+                          }}
+                          error={errors.clientes?.[index]?.clienteId?.message}
+                          placeholder="Selecione o cliente"
+                        />
+                      </div>
+                      <div className="col-span-3">
+                        <Input
+                          label="Valor Alocado"
+                          type="number"
+                          step="0.01"
+                          {...register(`clientes.${index}.allocatedValue`, { valueAsNumber: true })}
+                          error={errors.clientes?.[index]?.allocatedValue?.message}
+                        />
+                      </div>
+                      <div className="col-span-2 flex items-center gap-2 pb-1">
+                        <input
+                          type="checkbox"
+                          {...register(`clientes.${index}.saldoOk`)}
+                          className="w-5 h-5 accent-[var(--color-gold)]"
+                        />
+                        <span className="text-sm">Saldo OK</span>
+                      </div>
+                      <div className="col-span-2 flex justify-end pb-1">
+                        <button type="button" onClick={() => remove(index)} style={{ color: 'var(--color-danger)' }}>
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="col-span-3">
-                      <Input
-                        label="Valor Alocado"
-                        type="number"
-                        step="0.01"
-                        {...register(`clientes.${index}.allocatedValue`, { valueAsNumber: true })}
-                        error={errors.clientes?.[index]?.allocatedValue?.message}
-                      />
-                    </div>
-                    <div className="col-span-2 flex items-center gap-2 pb-1">
-                      <input
-                        type="checkbox"
-                        {...register(`clientes.${index}.saldoOk`)}
-                        className="w-5 h-5 accent-[var(--color-gold)]"
-                      />
-                      <span className="text-sm">Saldo OK</span>
-                    </div>
-                    <div className="col-span-2 flex justify-end pb-1">
-                      <button type="button" onClick={() => remove(index)} style={{ color: 'var(--color-danger)' }}>
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -743,14 +775,15 @@ export default function OfertasPage() {
         oferta={selectedOferta}
         isOpen={detalhesModalOpen}
         onClose={() => setDetalhesModalOpen(false)}
-        ownerUid={user?.uid}
+        ownerUid={ownerUid}
         clientes={clientes}
+        loading={loading}
         readOnly={access.readOnly}
         onSave={async (updatedOferta, options) => {
-          if (!user || !selectedOferta?.id) return;
+          if (!ownerUid || !selectedOferta?.id) return;
           try {
             setSaving(true);
-            const updated = await updateOfferReservation(selectedOferta.id, updatedOferta, user.uid);
+            const updated = await updateOfferReservation(selectedOferta.id, updatedOferta, ownerUid);
             if (updated) {
               await loadData();
               const scopes: InvalidationScope[] = options?.emitClientsInvalidation
@@ -856,6 +889,7 @@ function OfertaDetalhesModal({
   onClose,
   ownerUid,
   clientes,
+  loading,
   onSave,
   readOnly,
   saving,
@@ -865,6 +899,7 @@ function OfertaDetalhesModal({
   onClose: () => void;
   ownerUid?: string;
   clientes: Cliente[];
+  loading: boolean;
   onSave: (data: OfferReservation, options?: OfferDetailSaveOptions) => Promise<void>;
   readOnly: boolean;
   saving: boolean;
@@ -890,7 +925,7 @@ function OfertaDetalhesModal({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [reservationDrawerOpen, setReservationDrawerOpen] = useState(false);
   const [reservationMode, setReservationMode] = useState<'select-client' | 'create-client'>('select-client');
-  const [clientSearchTerm, setClientSearchTerm] = useState('');
+  const [inlineAddClientId, setInlineAddClientId] = useState('');
   const [selectedExistingClientId, setSelectedExistingClientId] = useState('');
   const [quickClientName, setQuickClientName] = useState('');
   const [quickClientEmail, setQuickClientEmail] = useState('');
@@ -940,25 +975,40 @@ function OfertaDetalhesModal({
   // Clientes disponíveis para adicionar (excluindo já adicionados)
   const clientesAdicionados = new Set(formData.clientes.map(c => c.clienteId));
   const clientesDisponiveis = clientes.filter(c => c.id && !clientesAdicionados.has(c.id));
-  const offerLocked = statusIsLocked(formData.status, {
+  const normalizedStatus = normalizeOfferStatus(formData.status, {
     reservaEfetuada: formData.reservaEfetuada,
     reservaLiquidada: formData.reservaLiquidada,
   });
+  const offerStatusLocked = normalizedStatus === 'CANCELADA' || normalizedStatus === 'LIQUIDADA';
+  const reservationWindowExpired = isReservationWindowExpired(formData.reservationEndDate);
+  const liquidationWindowExpired = isLiquidationMomentExpired(formData.liquidationDate || formData.dataLiquidacao);
+  const offerAcceptsReservations = canAcceptNewReservations({
+    status: formData.status,
+    reservaEfetuada: formData.reservaEfetuada,
+    reservaLiquidada: formData.reservaLiquidada,
+    liquidationDate: formData.liquidationDate,
+    dataLiquidacao: formData.dataLiquidacao,
+    reservationEndDate: formData.reservationEndDate,
+  });
+  const offerLocked = !offerAcceptsReservations;
   const canAddReservation = !readOnly && !offerLocked;
   const reservationTotal = formData.clientes.reduce((sum, item) => sum + (Number(item.allocatedValue) || 0), 0);
-
-  const filteredClientsBySearch = (() => {
-    const term = clientSearchTerm.trim().toLowerCase();
-    if (!term) return clientes;
-    return clientes.filter((client) => {
-      const values = [
-        client.nome || '',
-        client.email || '',
-        client.telefone || '',
-      ];
-      return values.some((value) => value.toLowerCase().includes(term));
-    });
-  })();
+  const reservationEndDateLabel = formData.reservationEndDate
+    ? new Date(`${formData.reservationEndDate}T12:00:00`).toLocaleDateString('pt-BR')
+    : null;
+  const reservationLockMessage = offerStatusLocked
+    ? 'Oferta liquidada/cancelada. Novas reservas estão bloqueadas.'
+    : liquidationWindowExpired
+      ? 'Liquidação da oferta já atingida. Novas reservas estão bloqueadas.'
+      : reservationWindowExpired
+      ? `Prazo da reserva encerrado em ${reservationEndDateLabel || 'data informada'}.`
+      : '';
+  const availableClientOptions = clientesDisponiveis.map((client) => ({
+    value: client.id || '',
+    label: client.nome,
+    hint: [client.cpfCnpj, client.codigoConta, client.email, client.telefone].filter(Boolean).join(' | '),
+    searchText: [client.nome, client.cpfCnpj, client.codigoConta, client.email, client.telefone].filter(Boolean).join(' '),
+  }));
 
   const quickDuplicateClient = (() => {
     const email = normalizeEmail(quickClientEmail);
@@ -987,7 +1037,7 @@ function OfertaDetalhesModal({
 
   const resetReservationDrawer = () => {
     setReservationMode('select-client');
-    setClientSearchTerm('');
+    setInlineAddClientId('');
     setSelectedExistingClientId('');
     setQuickClientName('');
     setQuickClientEmail('');
@@ -1050,7 +1100,7 @@ function OfertaDetalhesModal({
   const handleSaveReservation = async () => {
     if (addingReservation) return;
     if (!canAddReservation) {
-      toastError('Oferta já liquidada/cancelada.');
+      toastError(reservationLockMessage || 'Oferta indisponível para novas reservas.');
       return;
     }
     if (!Number.isFinite(reservationAmount) || reservationAmount <= 0) {
@@ -1552,8 +1602,8 @@ function OfertaDetalhesModal({
                 content={
                   readOnly
                     ? 'Sem permissão para editar'
-                    : offerLocked
-                      ? 'Oferta já liquidada/cancelada'
+                    : reservationLockMessage
+                      ? reservationLockMessage
                       : ''
                 }
                 disabled={canAddReservation}
@@ -1573,21 +1623,21 @@ function OfertaDetalhesModal({
               </Tooltip>
               {isEditMode && !readOnly && (
                 <div className="flex items-center gap-2">
-                  {clientesDisponiveis.length > 0 ? (
-                    <select
-                      onChange={(e) => {
-                        handleAddCliente(e.target.value);
-                        e.target.value = '';
+                  {availableClientOptions.length > 0 ? (
+                    <ClientSelect
+                      value={inlineAddClientId}
+                      options={availableClientOptions}
+                      loading={loading}
+                      onChange={(nextValue) => {
+                        if (!nextValue) return;
+                        setInlineAddClientId(nextValue);
+                        handleAddCliente(nextValue);
+                        setInlineAddClientId('');
                       }}
-                      className="px-3 py-1.5 text-sm rounded-md focus-gold"
-                      style={{ border: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Adicionar na edicao</option>
-                      {clientesDisponiveis.map((c) => (
-                        <option key={c.id} value={c.id}>{c.nome}</option>
-                      ))}
-                    </select>
+                      placeholder="Adicionar na edição"
+                      searchPlaceholder="Buscar cliente para adicionar..."
+                      className="w-72"
+                    />
                   ) : (
                     <span className="text-xs italic" style={{ color: 'var(--color-text-muted)' }}>Todos os clientes já adicionados</span>
                   )}
@@ -1599,7 +1649,7 @@ function OfertaDetalhesModal({
           {offerLocked && (
             <div className="mb-3 rounded-lg p-3" style={{ backgroundColor: 'var(--color-warning-bg)', border: '1px solid var(--color-warning)' }}>
               <p className="text-sm" style={{ color: 'var(--color-warning)' }}>
-                Oferta já liquidada/cancelada. Novas reservas estão bloqueadas.
+                {reservationLockMessage}
               </p>
             </div>
           )}
@@ -2023,56 +2073,16 @@ function OfertaDetalhesModal({
 
                 {reservationMode === 'select-client' ? (
                   <div className="space-y-3">
-                    <div className="relative">
-                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-text-muted)' }} />
-                      <input
-                        type="text"
-                        value={clientSearchTerm}
-                        onChange={(event) => setClientSearchTerm(event.target.value)}
-                        placeholder="Buscar por nome, email ou telefone"
-                        className="w-full pl-9 pr-3 py-2 rounded-md text-sm focus-gold"
-                        style={{
-                          border: '1px solid var(--color-border)',
-                          backgroundColor: 'var(--color-surface)',
-                          color: 'var(--color-text)',
-                        }}
-                      />
-                    </div>
-                    <div className="max-h-48 overflow-y-auto space-y-2">
-                      {filteredClientsBySearch.length === 0 ? (
-                        <p className="text-sm italic" style={{ color: 'var(--color-text-muted)' }}>
-                          Nenhum cliente encontrado.
-                        </p>
-                      ) : (
-                        filteredClientsBySearch.slice(0, 40).map((client) => {
-                          const isSelected = selectedExistingClientId === client.id;
-                          const alreadyReserved = Boolean(client.id && clientesAdicionados.has(client.id));
-                          return (
-                            <button
-                              key={client.id || client.nome}
-                              type="button"
-                              disabled={!client.id || alreadyReserved}
-                              onClick={() => setSelectedExistingClientId(client.id || '')}
-                              className="w-full text-left rounded-md p-2 border transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                              style={{
-                                borderColor: isSelected ? 'var(--color-gold)' : 'var(--color-border-subtle)',
-                                backgroundColor: isSelected ? 'var(--color-gold-bg)' : 'var(--color-surface)',
-                              }}
-                            >
-                              <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{client.nome}</p>
-                              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                                {client.email || 'Sem email'} | {client.telefone || 'Sem telefone'}
-                              </p>
-                              {alreadyReserved && (
-                                <p className="text-xs mt-1" style={{ color: 'var(--color-warning)' }}>
-                                  Cliente já reservado nesta oferta.
-                                </p>
-                              )}
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
+                    <ClientSelect
+                      label="Cliente"
+                      value={selectedExistingClientId}
+                      options={availableClientOptions}
+                      loading={loading}
+                      onChange={(nextValue) => setSelectedExistingClientId(nextValue)}
+                      placeholder="Selecione o cliente"
+                      searchPlaceholder="Buscar por nome, CPF/CNPJ, código, email ou telefone"
+                      emptyText="Nenhum cliente disponível para reserva."
+                    />
                     {selectedExistingClient && (
                       <div className="rounded-md p-2 border" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: 'var(--color-surface-2)' }}>
                         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Cliente selecionado</p>
