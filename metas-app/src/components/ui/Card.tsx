@@ -59,6 +59,8 @@ interface KpiCardProps {
   hint?: string;
   accentColor?: 'gold' | 'success' | 'danger' | 'info' | 'warning';
   className?: string;
+  progress?: number | null;
+  progressLabel?: string;
 }
 
 function parseCurrencyValue(value: string | number): { prefix: string; amount: string } | null {
@@ -90,6 +92,8 @@ export function KpiCard({
   hint,
   accentColor = 'gold',
   className = '',
+  progress,
+  progressLabel,
 }: KpiCardProps) {
   const accentColors = {
     gold: 'var(--color-gold)',
@@ -168,6 +172,45 @@ export function KpiCard({
             >
               {trendSymbol} {trendValue}
             </p>
+          )}
+          {typeof progress === 'number' && (
+            <div className="mt-2">
+              <div className="flex items-center justify-between mb-1">
+                {progressLabel && (
+                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    {progressLabel}
+                  </span>
+                )}
+                <span
+                  className="text-xs font-semibold tabular-nums"
+                  style={{
+                    color: progress >= 100
+                      ? 'var(--color-success)'
+                      : progress >= 75
+                        ? accentColors[accentColor]
+                        : 'var(--color-warning)',
+                  }}
+                >
+                  {Math.max(0, progress).toFixed(0)}%
+                </span>
+              </div>
+              <div
+                className="h-1.5 w-full overflow-hidden rounded-full"
+                style={{ backgroundColor: 'var(--color-surface-3)' }}
+              >
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, progress))}%`,
+                    backgroundColor: progress >= 100
+                      ? 'var(--color-success)'
+                      : progress >= 75
+                        ? accentColors[accentColor]
+                        : 'var(--color-warning)',
+                  }}
+                />
+              </div>
+            </div>
           )}
         </div>
         {icon && (

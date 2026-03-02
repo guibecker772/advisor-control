@@ -43,11 +43,14 @@ import type {
 } from '../../domain/types';
 import type { CalendarEvent } from '../../domain/types/calendar';
 import { subscribeDataInvalidation } from '../../lib/dataInvalidation';
-import { EmptyState, KpiCard, PageContainer, PageHeader, PageSkeleton, SectionCard } from '../../components/ui';
+import { KpiCard, PageContainer, PageHeader, PageSkeleton, SectionCard } from '../../components/ui';
 import { EvolucaoPatrimonialChart } from './components/EvolucaoPatrimonialChart';
 import { AlertasEOportunidades } from './components/AlertasEOportunidades';
 import { AtividadeRecente } from './components/AtividadeRecente';
 import { MetaPeriodoCard } from './components/MetaPeriodoCard';
+import { HojeWidget } from './components/HojeWidget';
+import { FunilProspects } from './components/FunilProspects';
+import { Top5ClientesCustodia, Top5Captacoes } from './components/Top5Widgets';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface QuickAction {
@@ -259,6 +262,21 @@ export default function DashboardPage() {
       return 'Em linha';
     };
 
+    const captacaoProgress =
+      monthlyGoal && Number(monthlyGoal.metaCaptacaoLiquida) > 0
+        ? (realizadosMes.captacaoLiquida / Number(monthlyGoal.metaCaptacaoLiquida)) * 100
+        : null;
+
+    const receitaProgress =
+      monthlyGoal && Number(monthlyGoal.metaReceita) > 0
+        ? (realizadosMes.receita / Number(monthlyGoal.metaReceita)) * 100
+        : null;
+
+    const transferenciaProgress =
+      monthlyGoal && Number(monthlyGoal.metaTransferenciaXp) > 0
+        ? (realizadosMes.transferenciaXp / Number(monthlyGoal.metaTransferenciaXp)) * 100
+        : null;
+
     return [
       {
         id: 'custodia-total',
@@ -277,6 +295,8 @@ export default function DashboardPage() {
         accentColor: 'info' as const,
         trend: getTrend(realizadosMes.captacaoLiquida),
         trendValue: getTrendText(realizadosMes.captacaoLiquida),
+        progress: captacaoProgress,
+        progressLabel: 'vs meta',
       },
       {
         id: 'transferencia-xp',
@@ -287,6 +307,8 @@ export default function DashboardPage() {
         accentColor: 'warning' as const,
         trend: getTrend(realizadosMes.transferenciaXp),
         trendValue: getTrendText(realizadosMes.transferenciaXp),
+        progress: transferenciaProgress,
+        progressLabel: 'vs meta',
       },
       {
         id: 'receita-realizada',
@@ -297,6 +319,8 @@ export default function DashboardPage() {
         accentColor: 'success' as const,
         trend: getTrend(realizadosMes.receita),
         trendValue: getTrendText(realizadosMes.receita),
+        progress: receitaProgress,
+        progressLabel: 'vs meta',
       },
       {
         id: 'roa-mensal',
@@ -324,6 +348,7 @@ export default function DashboardPage() {
     realizadosMes.receita,
     roaMensal,
     mesAtual,
+    monthlyGoal,
   ]);
 
   const lastUpdatedLabel = useMemo(() => {
@@ -351,7 +376,8 @@ export default function DashboardPage() {
         subtitle={`${getNomeMes(mesAtual)} de ${anoAtual}${lastUpdatedLabel ? ` • Atualizado em: ${lastUpdatedLabel}` : ''}`}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-4">
+      {/* ── KPI row ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon;
           return (
@@ -365,82 +391,24 @@ export default function DashboardPage() {
               trend={kpi.trend}
               trendValue={kpi.trendValue}
               layout="wide"
+              progress={kpi.progress}
+              progressLabel={kpi.progressLabel}
             />
           );
         })}
       </div>
 
-      {!monthlyGoal && (
-        <SectionCard title="Metas do mês" subtitle="Defina objetivos para acompanhar a performance">
-          <EmptyState
-            title="Metas não configuradas"
-            description="Defina suas metas mensais para acompanhar o desempenho do período."
-            action={(
-              <Link
-                to="/metas"
-                className="rounded-lg px-4 py-2 text-sm font-medium focus-gold"
-                style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
-              >
-                Definir metas
-              </Link>
-            )}
-          />
-        </SectionCard>
-      )}
+      {/* ── Main grid: content (8 col) + sticky rail (4 col) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-5">
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8 self-start">
-          <EvolucaoPatrimonialChart
-            lancamentos={captacaoLancamentos}
-            anoAtual={anoAtual}
-            captacaoRoute="/captacao"
-          />
-        </div>
+        {/* ── Left: main content ── */}
+        <div className="lg:col-span-8 flex flex-col gap-5 min-w-0">
+          {/* Hoje widget (mobile-first priority) */}
+          <div className="block lg:hidden">
+            <HojeWidget prospects={prospects} calendarEvents={calendarEvents} />
+          </div>
 
-        <div className="lg:col-span-4 self-start space-y-6">
-          <SectionCard title="Ações rápidas" subtitle="Atalhos estratégicos">
-            <div className="grid grid-cols-2 gap-3">
-              {QUICK_ACTIONS.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Link
-                    key={action.to}
-                    to={action.to}
-                    className="rounded-lg border p-3 transition-colors hover:bg-[var(--color-surface-3)] focus-gold"
-                    style={{
-                      backgroundColor: 'var(--color-surface-2)',
-                      borderColor: 'var(--color-border-subtle)',
-                    }}
-                  >
-                    <div
-                      className="w-9 h-9 rounded-md flex items-center justify-center mb-2"
-                      style={{ backgroundColor: action.iconBackground }}
-                    >
-                      <Icon className="w-4 h-4" style={{ color: action.iconColor }} />
-                    </div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-                      {action.label}
-                    </p>
-                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-                      {action.description}
-                    </p>
-                  </Link>
-                );
-              })}
-            </div>
-          </SectionCard>
-
-          <MetaPeriodoCard
-            goals={monthlyGoals}
-            lancamentos={captacaoLancamentos}
-            mesAtual={mesAtual}
-            anoAtual={anoAtual}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-4">
+          {/* Alertas & Oportunidades */}
           <AlertasEOportunidades
             clientes={clientes}
             prospects={prospects}
@@ -449,9 +417,59 @@ export default function DashboardPage() {
             reunioesMes={reunioesMes}
             calendarEvents={calendarEvents}
           />
-        </div>
 
-        <div className="lg:col-span-8">
+          {/* Chart */}
+          <EvolucaoPatrimonialChart
+            lancamentos={captacaoLancamentos}
+            anoAtual={anoAtual}
+            captacaoRoute="/captacao"
+          />
+
+          {/* Quick actions */}
+          <SectionCard title="Ações rápidas" subtitle="Atalhos estratégicos">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {QUICK_ACTIONS.map((action) => {
+                const Icon = action.icon;
+                return (
+                  <Link
+                    key={action.to}
+                    to={action.to}
+                    className="rounded-lg border p-2.5 transition-colors hover:bg-[var(--color-surface-3)] focus-gold text-center"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      borderColor: 'var(--color-border-subtle)',
+                    }}
+                  >
+                    <div
+                      className="w-8 h-8 rounded-md flex items-center justify-center mx-auto mb-1.5"
+                      style={{ backgroundColor: action.iconBackground }}
+                    >
+                      <Icon className="w-4 h-4" style={{ color: action.iconColor }} />
+                    </div>
+                    <p className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                      {action.label}
+                    </p>
+                  </Link>
+                );
+              })}
+            </div>
+          </SectionCard>
+
+          {/* Meta período */}
+          <MetaPeriodoCard
+            goals={monthlyGoals}
+            lancamentos={captacaoLancamentos}
+            mesAtual={mesAtual}
+            anoAtual={anoAtual}
+          />
+
+          {/* Top 5 row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <Top5ClientesCustodia clientes={clientes} />
+            <Top5Captacoes lancamentos={captacaoLancamentos} />
+          </div>
+
+          {/* Activity feed */}
           <AtividadeRecente
             clientes={clientes}
             prospects={prospects}
@@ -460,6 +478,35 @@ export default function DashboardPage() {
             crosses={crosses}
             calendarEvents={calendarEvents}
           />
+        </div>
+
+        {/* ── Right: sticky rail ── */}
+        <div className="lg:col-span-4 flex flex-col gap-5 lg:sticky lg:top-[80px] h-fit">
+          {/* Hoje widget (desktop only — already shown above on mobile) */}
+          <div className="hidden lg:block">
+            <HojeWidget prospects={prospects} calendarEvents={calendarEvents} />
+          </div>
+
+          {/* Funil de prospects */}
+          <FunilProspects prospects={prospects} />
+
+          {/* Metas não configuradas alert */}
+          {!monthlyGoal && (
+            <SectionCard title="Metas do mês" subtitle="Defina objetivos">
+              <div className="py-3 text-center">
+                <p className="text-sm mb-2" style={{ color: 'var(--color-text-muted)' }}>
+                  Metas não configuradas para este mês.
+                </p>
+                <Link
+                  to="/metas"
+                  className="inline-flex items-center rounded-lg px-4 py-2 text-sm font-medium focus-gold transition-colors"
+                  style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
+                >
+                  Definir metas
+                </Link>
+              </div>
+            </SectionCard>
+          )}
         </div>
       </div>
     </PageContainer>

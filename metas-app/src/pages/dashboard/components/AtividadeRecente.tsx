@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Calendar,
+  ExternalLink,
   Package,
   Repeat,
   TrendingUp,
@@ -201,6 +202,19 @@ export function AtividadeRecente({
                   <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--color-text-secondary)' }}>
                     {activity.subtitle}
                   </p>
+                  {activity.to && (
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <Link
+                        to={activity.to}
+                        className="inline-flex items-center gap-1 text-xs font-medium transition-colors hover:underline focus-gold"
+                        style={{ color: 'var(--color-gold)' }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Abrir
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </div>
             );

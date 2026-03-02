@@ -222,11 +222,11 @@ export function AlertasEOportunidades({
   }, [clientes, prospects, offers, monthlyGoal, reunioesMes, calendarEvents]);
 
   return (
-    <SectionCard title="Alertas e Oportunidades" subtitle="Prioridades para o dia" className="h-full">
+    <SectionCard title="Alertas e Oportunidades" subtitle="Prioridades para o dia">
       {alertas.length === 0 ? (
         <InlineEmpty message="Tudo certo por aqui. Sem pendências críticas hoje." />
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-3 max-h-[360px] overflow-y-auto">
           {alertas.map((alerta) => {
             const Icon = alerta.icon;
             const content = (
