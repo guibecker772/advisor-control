@@ -223,7 +223,7 @@ export default function ClientSummaryPanel({
         .map((reuniao) => {
           const timestamp = resolveMeetingTimestamp(reuniao);
           const periodLabel = formatMonthYear(reuniao.mes, reuniao.ano);
-          const statusLabel = reuniao.realizada ? 'Reuniao realizada' : 'Reuniao pendente';
+          const statusLabel = reuniao.realizada ? 'Reunião realizada' : 'Reunião pendente';
 
           return {
             id: `interacao-${reuniao.id || `${reuniao.mes}-${reuniao.ano}`}`,
@@ -403,7 +403,7 @@ export default function ClientSummaryPanel({
           {timelineStatus === 'error' && (
             <ErrorState
               title="Erro ao carregar timeline"
-              description="Nao foi possivel carregar os eventos e interacoes deste cliente."
+              description="Não foi possível carregar os eventos e interações deste cliente."
               onRetry={() => {
                 void loadTimeline();
               }}
@@ -413,8 +413,8 @@ export default function ClientSummaryPanel({
 
           {timelineStatus === 'ready' && timelineItems.length === 0 && (
             <EmptyState
-              title="Sem interacoes registradas"
-              description="Ainda nao existem eventos ou registros de reuniao para este cliente."
+              title="Sem interações registradas"
+              description="Ainda não existem eventos ou registros de reunião para este cliente."
               primaryAction={canCreateEvent ? { label: 'Criar evento', onClick: onCreateEvent } : undefined}
             />
           )}

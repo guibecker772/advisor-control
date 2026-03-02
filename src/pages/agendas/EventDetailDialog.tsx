@@ -40,7 +40,7 @@ function getCategoryData(event: CalendarEvent): { label: string; persisted: bool
   if (event.meetingType) {
     return { label: MEETING_TYPE_LABELS[event.meetingType], persisted: true };
   }
-  return { label: 'Reuniao', persisted: false };
+  return { label: 'Reunião', persisted: false };
 }
 
 function getRelatedClientOrProspect(event: CalendarEvent): string | null {

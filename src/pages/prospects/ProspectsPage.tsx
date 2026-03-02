@@ -358,9 +358,18 @@ export default function ProspectsPage() {
         ownerUid: user.uid,
       });
 
+      // Determine the effective status for filter auto-switch
+      const newStatus = normalizeProspectStatus(result.prospect.status);
+      const wasActive = !selectedProspect?.id || isProspectAtivo(selectedProspect.status);
+      const isNowTerminal = newStatus === 'ganho' || newStatus === 'perdido';
+
       if (selectedProspect?.id) {
         setProspects((prev) => prev.map((item) => (item.id === selectedProspect.id ? result.prospect : item)));
-        if (result.prospect.converted) {
+        if (isNowTerminal && wasActive && statusFilter === 'active') {
+          const label = newStatus === 'ganho' ? 'Ganho' : 'Perdido';
+          setStatusFilter(newStatus as ProspectStatusFilter);
+          toastSuccess(`Prospect movido para "${label}". Filtro atualizado.`);
+        } else if (result.prospect.converted) {
           toastSuccess('Prospect atualizado e conversão sincronizada com cliente/metas.');
         } else {
           toastSuccess('Prospect atualizado com sucesso!');

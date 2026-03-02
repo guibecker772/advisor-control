@@ -137,8 +137,8 @@ const NAVIGATION_CONFIG = [
   },
   {
     id: 'route:/captacao',
-    title: 'Captacao',
-    subtitle: 'Movimentacoes de entradas e saidas',
+    title: 'Captação',
+    subtitle: 'Movimentações de entradas e saídas',
     href: '/captacao',
     icon: <TrendingUp className="w-4 h-4" />,
     scope: 'offers' as const,
@@ -154,7 +154,7 @@ const NAVIGATION_CONFIG = [
   {
     id: 'route:/ofertas',
     title: 'Ofertas',
-    subtitle: 'Ativos e liquidacoes',
+    subtitle: 'Ativos e liquidações',
     href: '/ofertas',
     icon: <Package className="w-4 h-4" />,
     scope: 'offers' as const,
@@ -169,8 +169,8 @@ const NAVIGATION_CONFIG = [
   },
   {
     id: 'route:/salario',
-    title: 'Salario',
-    subtitle: 'Projecao e acompanhamento',
+    title: 'Salário',
+    subtitle: 'Projeção e acompanhamento',
     href: '/salario',
     icon: <Wallet className="w-4 h-4" />,
     scope: 'offers' as const,
@@ -427,7 +427,7 @@ export default function CommandPalette({
       setOfferData(offers);
     } catch (error) {
       console.error('Erro ao carregar dados da busca global:', error);
-      setSearchError('Nao foi possivel buscar resultados agora.');
+      setSearchError('Não foi possível buscar resultados agora.');
     } finally {
       setSearchLoading(false);
     }

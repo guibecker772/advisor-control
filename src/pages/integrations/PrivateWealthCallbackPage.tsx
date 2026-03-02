@@ -28,15 +28,15 @@ export default function PrivateWealthCallbackPage() {
 
   const title = useMemo(() => {
     if (status === 'processing') return 'Vinculando cliente';
-    if (status === 'expired') return 'Sessao expirada';
-    if (status === 'invalid') return 'Link invalido';
-    return 'Nao foi possivel vincular';
+    if (status === 'expired') return 'Sessão expirada';
+    if (status === 'invalid') return 'Link inválido';
+    return 'Não foi possível vincular';
   }, [status]);
 
   const description = useMemo(() => {
-    if (status === 'processing') return 'Aguarde enquanto finalizamos a vinculacao e abrimos o Private Wealth.';
-    if (status === 'expired') return 'A sessao de vinculacao expirou ou ja foi utilizada.';
-    if (status === 'invalid') return 'Parametros de vinculacao ausentes ou invalidos.';
+    if (status === 'processing') return 'Aguarde enquanto finalizamos a vinculação e abrimos o Private Wealth.';
+    if (status === 'expired') return 'A sessão de vinculação expirou ou já foi utilizada.';
+    if (status === 'invalid') return 'Parâmetros de vinculação ausentes ou inválidos.';
     return 'Tente novamente a partir do Advisor Control.';
   }, [status]);
 

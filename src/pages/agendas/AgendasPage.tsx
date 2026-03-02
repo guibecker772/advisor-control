@@ -141,7 +141,7 @@ function getEventCategoryData(event: CalendarEvent): { label: string; persisted:
   if (event.meetingType) {
     return { label: MEETING_TYPE_LABELS[event.meetingType], persisted: true };
   }
-  return { label: 'Reuniao', persisted: false };
+  return { label: 'Reunião', persisted: false };
 }
 
 function getTooltipClientLabel(event: CalendarEvent): string | null {
@@ -279,7 +279,7 @@ export default function AgendasPage() {
       setEvents(allEvents.filter((event) => event.status !== 'cancelled'));
     } catch (error) {
       console.error('Erro ao carregar eventos:', error);
-      setLoadError('Nao foi possivel carregar os eventos da agenda.');
+      setLoadError('Não foi possível carregar os eventos da agenda.');
       toast.error('Erro ao carregar eventos');
     } finally {
       setLoading(false);
@@ -645,9 +645,9 @@ export default function AgendasPage() {
               size="sm"
               rightIcon={<ChevronRight className="w-4 h-4" />}
               onClick={handleNext}
-              aria-label="Proximo periodo"
+              aria-label="Próximo período"
             >
-              Proximo
+              Próximo
             </Button>
             <h2
               className="text-lg font-semibold ml-1"
@@ -680,7 +680,7 @@ export default function AgendasPage() {
           <>
             {!loadError && visibleEvents.length === 0 && (
               <InlineEmpty
-                message="Nenhum evento no periodo visivel."
+                message="Nenhum evento no período visível."
                 action={canManageEvents ? { label: 'Criar evento', onClick: () => openCreateModal() } : undefined}
               />
             )}

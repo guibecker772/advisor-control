@@ -9,6 +9,7 @@ import {
   where,
   type CollectionReference,
   type DocumentData,
+  type DocumentReference,
   type Firestore,
 } from 'firebase/firestore';
 
@@ -32,7 +33,7 @@ import type {
   EventReminder,
   Notification,
 } from '../domain/types/calendar';
-import { repairMojibakePayload } from '../lib/mojibake';
+import { repairMojibakePayload } from '../lib/encodingRepair';
 
 type RepositoryEntity = {
   id?: string;
@@ -125,6 +126,21 @@ function toTypedEntity<T extends RepositoryEntity>(data: DocumentData, id: strin
   } as T;
 }
 
+async function repairFirestoreEntity<T extends RepositoryEntity>(
+  id: string,
+  ownerUid: string,
+  rawData: DocumentData,
+  documentRef: DocumentReference<DocumentData>,
+): Promise<T> {
+  const repaired = repairMojibakePayload(rawData);
+
+  if (repaired.changed) {
+    await setDoc(documentRef, stripUndefined(repaired.value) as DocumentData, { merge: true });
+  }
+
+  return toTypedEntity<T>(repaired.value as DocumentData, id, ownerUid);
+}
+
 let firestorePromise: Promise<Firestore> | null = null;
 
 async function getFirestoreDb(): Promise<Firestore> {
@@ -177,7 +193,14 @@ function saveLocalData<T extends RepositoryEntity>(collectionName: string, owner
 async function getAllFirestore<T extends RepositoryEntity>(collectionName: string, ownerUid: string): Promise<T[]> {
   const ref = await getCollectionRef(ownerUid, collectionName);
   const snapshot = await getDocs(ref);
-  const items = snapshot.docs.map((docSnapshot) => toTypedEntity<T>(docSnapshot.data(), docSnapshot.id, ownerUid));
+  const items = await Promise.all(
+    snapshot.docs.map((docSnapshot) => repairFirestoreEntity<T>(
+      docSnapshot.id,
+      ownerUid,
+      docSnapshot.data(),
+      docSnapshot.ref,
+    )),
+  );
   return sortByUpdatedAtDesc(items);
 }
 
@@ -194,7 +217,7 @@ async function getByIdFirestore<T extends RepositoryEntity>(
     return null;
   }
 
-  return toTypedEntity<T>(snapshot.data(), snapshot.id, ownerUid);
+  return repairFirestoreEntity<T>(snapshot.id, ownerUid, snapshot.data(), snapshot.ref);
 }
 
 async function createFirestore<T extends RepositoryEntity>(
@@ -205,8 +228,9 @@ async function createFirestore<T extends RepositoryEntity>(
   const ref = await getCollectionRef(ownerUid, collectionName);
   const documentRef = doc(ref);
   const now = nowIso();
+  const repairedInput = repairMojibakePayload(inputData).value;
   const newItem = {
-    ...(inputData as Record<string, unknown>),
+    ...(repairedInput as Record<string, unknown>),
     id: documentRef.id,
     ownerUid,
     createdAt: now,
@@ -233,9 +257,10 @@ async function updateFirestore<T extends RepositoryEntity>(
 
   const existingData = snapshot.data() as Record<string, unknown>;
   const now = nowIso();
+  const repairedUpdateData = repairMojibakePayload(updateData).value;
   const updatedItem = {
     ...existingData,
-    ...(updateData as Record<string, unknown>),
+    ...(repairedUpdateData as Record<string, unknown>),
     id,
     ownerUid,
     createdAt: (existingData.createdAt as string | undefined) || now,
@@ -269,7 +294,14 @@ async function queryBySingleFieldFirestore<T extends RepositoryEntity>(
 
   try {
     const snapshot = await getDocs(query(ref, where(field, '==', value)));
-    const items = snapshot.docs.map((docSnapshot) => toTypedEntity<T>(docSnapshot.data(), docSnapshot.id, ownerUid));
+    const items = await Promise.all(
+      snapshot.docs.map((docSnapshot) => repairFirestoreEntity<T>(
+        docSnapshot.id,
+        ownerUid,
+        docSnapshot.data(),
+        docSnapshot.ref,
+      )),
+    );
     return sortByUpdatedAtDesc(items);
   } catch (error) {
     console.warn(`[repositories] Firestore query fallback (${collectionName}.${field}):`, error);
@@ -289,7 +321,14 @@ async function getByMonthFirestore<T extends RepositoryEntity>(
   try {
     // This query may require a composite index on (mes, ano) depending on Firestore settings.
     const snapshot = await getDocs(query(ref, where('mes', '==', mes), where('ano', '==', ano)));
-    const items = snapshot.docs.map((docSnapshot) => toTypedEntity<T>(docSnapshot.data(), docSnapshot.id, ownerUid));
+    const items = await Promise.all(
+      snapshot.docs.map((docSnapshot) => repairFirestoreEntity<T>(
+        docSnapshot.id,
+        ownerUid,
+        docSnapshot.data(),
+        docSnapshot.ref,
+      )),
+    );
     return sortByUpdatedAtDesc(items);
   } catch (error) {
     console.warn(`[repositories] Firestore month query fallback (${collectionName}):`, error);
@@ -339,8 +378,9 @@ export function createRepository<
       if (isLocalDataDriver) {
         const data = loadLocalData<T>(collectionName, ownerUid);
         const now = nowIso();
+        const repairedInput = repairMojibakePayload(inputData).value;
         const newItem = {
-          ...(inputData as Record<string, unknown>),
+          ...(repairedInput as Record<string, unknown>),
           id: generateId(),
           ownerUid,
           createdAt: now,
@@ -360,10 +400,11 @@ export function createRepository<
         const data = loadLocalData<T>(collectionName, ownerUid);
         const index = data.findIndex((item) => item.id === id);
         if (index === -1) return null;
+        const repairedUpdateData = repairMojibakePayload(updateData).value;
 
         const updated = {
           ...(data[index] as Record<string, unknown>),
-          ...(updateData as Record<string, unknown>),
+          ...(repairedUpdateData as Record<string, unknown>),
           updatedAt: nowIso(),
         } as unknown as T;
 

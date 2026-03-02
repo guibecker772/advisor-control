@@ -24,6 +24,12 @@ function isWonStatus(status: string | undefined): boolean {
   return normalized === 'ganho' || normalized === 'won' || normalized === 'closedwon' || normalized === 'closed_won';
 }
 
+function isTerminalStatus(status: string | undefined): boolean {
+  if (!status) return false;
+  const normalized = status.trim().toLowerCase();
+  return normalized === 'ganho' || normalized === 'perdido' || normalized === 'won' || normalized === 'lost';
+}
+
 function hasValidRealizedData(prospect: Prospect): boolean {
   return Number(prospect.realizadoValor || 0) > 0 && Boolean(prospect.realizadoData);
 }
@@ -371,11 +377,20 @@ export async function saveProspectWithConversion(
   }
 
   const upserted = prospectId
-    ? await prospectRepository.update(prospectId, data, ownerUid)
+    ? await prospectRepository.update(prospectId, {
+        ...data,
+        ...(isTerminalStatus(candidateStatus) && !isTerminalStatus(before?.status)
+          ? { closedAt: new Date().toISOString() }
+          : {}),
+        ...(!isTerminalStatus(candidateStatus) && isTerminalStatus(before?.status)
+          ? { closedAt: undefined }
+          : {}),
+      }, ownerUid)
     : await (async () => {
         const parsed = prospectSchema.parse(data);
         const createPayload: Omit<Prospect, 'id'> = {
           ...parsed,
+          ...(isTerminalStatus(parsed.status) ? { closedAt: new Date().toISOString() } : {}),
         };
         delete (createPayload as Partial<Prospect>).id;
         return prospectRepository.create(createPayload, ownerUid);

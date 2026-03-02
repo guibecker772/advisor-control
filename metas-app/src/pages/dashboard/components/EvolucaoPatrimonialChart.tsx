@@ -113,20 +113,20 @@ export function EvolucaoPatrimonialChart({
 
   return (
     <SectionCard
-      title="Evolução Patrimonial"
-      subtitle={`Acumulado diário de ${getNomeMes(mesAtual)} ${anoAtual}`}
+      title="EvoluÃ§Ã£o Patrimonial"
+      subtitle={`Acumulado diÃ¡rio de ${getNomeMes(mesAtual)} ${anoAtual}`}
     >
       {!hasData ? (
         <EmptyState
-          title="Sem dados de captação"
-          description="Registre lançamentos em Captação para ver a evolução mensal."
+          title="Sem dados de captaÃ§Ã£o"
+          description="Registre lanÃ§amentos em CaptaÃ§Ã£o para ver a evoluÃ§Ã£o mensal."
           action={(
             <Link
               to={captacaoRoute}
               className="rounded-lg px-4 py-2 text-sm font-medium focus-gold"
               style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
             >
-              Registrar lançamento
+              Registrar lanÃ§amento
             </Link>
           )}
         />
@@ -137,7 +137,7 @@ export function EvolucaoPatrimonialChart({
             viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
             preserveAspectRatio="none"
             role="img"
-            aria-label="Gráfico de evolução patrimonial"
+            aria-label="GrÃ¡fico de evoluÃ§Ã£o patrimonial"
           >
             {Array.from({ length: GRID_LINES + 1 }, (_, index) => {
               const y = CHART_TOP + (plotHeight / GRID_LINES) * index;
@@ -237,25 +237,25 @@ export function EvolucaoPatrimonialChart({
               </p>
               <div className="space-y-1.5">
                 <p className="flex items-center justify-between gap-2">
-                  <span>Captação diária</span>
+                  <span>CaptaÃ§Ã£o diÃ¡ria</span>
                   <span style={{ color: tooltipItem.captacaoLiquida >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                     {formatCurrency(tooltipItem.captacaoLiquida)}
                   </span>
                 </p>
                 <p className="flex items-center justify-between gap-2">
-                  <span>Captação acumulada</span>
+                  <span>CaptaÃ§Ã£o acumulada</span>
                   <span style={{ color: tooltipItem.captacaoLiquidaAcumulada >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                     {formatCurrency(tooltipItem.captacaoLiquidaAcumulada)}
                   </span>
                 </p>
                 <p className="flex items-center justify-between gap-2">
-                  <span>Transferência XP diária</span>
+                  <span>TransferÃªncia XP diÃ¡ria</span>
                   <span style={{ color: tooltipItem.transferenciaXp >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                     {formatCurrency(tooltipItem.transferenciaXp)}
                   </span>
                 </p>
                 <p className="flex items-center justify-between gap-2">
-                  <span>Transferência XP acumulada</span>
+                  <span>TransferÃªncia XP acumulada</span>
                   <span style={{ color: tooltipItem.transferenciaXpAcumulada >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                     {formatCurrency(tooltipItem.transferenciaXpAcumulada)}
                   </span>
@@ -267,11 +267,11 @@ export function EvolucaoPatrimonialChart({
           <div className="mt-2 flex flex-wrap items-center gap-4 text-xs" style={{ color: 'var(--color-text-muted)' }}>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: 'var(--chart-1)' }} />
-              Captação líquida acumulada
+              CaptaÃ§Ã£o lÃ­quida acumulada
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: 'var(--chart-5)' }} />
-              Transferência XP acumulada
+              TransferÃªncia XP acumulada
             </span>
           </div>
         </div>

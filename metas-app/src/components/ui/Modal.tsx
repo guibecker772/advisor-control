@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useRef, type RefObject } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useCallback, type RefObject } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -27,6 +27,10 @@ export function Modal({
   const titleId = useId();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const stableOnClose = useCallback(() => onCloseRef.current(), []);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -58,7 +62,7 @@ export function Modal({
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
-      onClose();
+      stableOnClose();
     };
 
     const previousOverflow = document.body.style.overflow;
@@ -77,7 +81,7 @@ export function Modal({
         previousFocusRef.current?.focus();
       }
     };
-  }, [initialFocusRef, isOpen, onClose, restoreFocusRef]);
+  }, [initialFocusRef, isOpen, stableOnClose, restoreFocusRef]);
 
   if (!isOpen) return null;
 

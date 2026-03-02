@@ -8,8 +8,8 @@ const EXCLUDED_FILES = new Set([
 ]);
 
 // Sequences frequently produced by UTF-8 <-> Latin1 mojibake.
-// Matches "Ã§", "Ã£", "Â°", etc. while avoiding valid standalone letters like "ÃO".
-const MOJIBAKE_PATTERN = /Ã[\u0080-\u00BF]|Â[\u0080-\u00BF]|�/g;
+// Matches common broken byte sequences while avoiding valid standalone accented letters.
+const MOJIBAKE_PATTERN = /Ã[\u0080-\u00BF]|Â[\u0080-\u00BF]|\uFFFD/g;
 
 async function walkFiles(directory) {
   const entries = await fs.readdir(directory, { withFileTypes: true });

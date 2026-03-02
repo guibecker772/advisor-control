@@ -80,6 +80,7 @@ export const prospectSchema = z.object({
   realizadoTipo: z.enum(['captacao_liquida', 'transferencia_xp']).optional().default('captacao_liquida'),
   realizadoData: z.string().optional(),
   status: z.enum(['novo', 'em_contato', 'qualificado', 'proposta', 'ganho', 'perdido']).optional().default('novo'),
+  closedAt: z.string().optional(),
   converted: z.boolean().optional().default(false),
   convertedAt: z.string().optional(),
   convertedClientId: z.string().optional(),

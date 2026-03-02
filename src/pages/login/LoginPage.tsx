@@ -13,7 +13,7 @@ import advisorControlLogo from '../../assets/brand/advisor-control-logo.svg';
 import advisorControlMark from '../../assets/brand/advisor-control-mark.svg';
 
 const loginSchema = z.object({
-  email: z.string().email('Email invalido'),
+  email: z.string().email('Email inválido'),
   password: z.string().min(6, 'Senha deve ter no minimo 6 caracteres'),
 });
 
@@ -22,7 +22,7 @@ const registerSchema = loginSchema
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: 'Senhas nao conferem',
+    message: 'Senhas não conferem',
     path: ['confirmPassword'],
   });
 
@@ -36,16 +36,16 @@ type AuthErrorLike = {
 };
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
-  'auth/invalid-credential': 'Email ou senha invalidos.',
-  'auth/user-not-found': 'Email ou senha invalidos.',
-  'auth/wrong-password': 'Email ou senha invalidos.',
+  'auth/invalid-credential': 'Email ou senha inválidos.',
+  'auth/user-not-found': 'Email ou senha inválidos.',
+  'auth/wrong-password': 'Email ou senha inválidos.',
   'auth/popup-closed-by-user': 'Login cancelado.',
-  'auth/unauthorized-domain': 'Dominio nao autorizado no Firebase. Verifique Authorized domains.',
-  'auth/email-already-in-use': 'Este email ja esta em uso.',
+  'auth/unauthorized-domain': 'Domínio não autorizado no Firebase. Verifique Authorized domains.',
+  'auth/email-already-in-use': 'Este email já está em uso.',
   'auth/weak-password': 'Senha muito fraca. Use ao menos 6 caracteres.',
 };
 
-const DEFAULT_AUTH_ERROR_MESSAGE = 'Nao foi possivel entrar. Tente novamente.';
+const DEFAULT_AUTH_ERROR_MESSAGE = 'Não foi possível entrar. Tente novamente.';
 
 function resolveAuthErrorMessage(error: unknown): string {
   const authError = error as AuthErrorLike;
@@ -206,7 +206,7 @@ export default function LoginPage() {
               Controle comercial com foco em resultado e relacionamento.
             </h1>
             <p className="mt-4 text-base" style={{ color: 'var(--color-text-secondary)' }}>
-              Centralize metas, captacao, agendas e oportunidades em um fluxo unico para o assessor.
+              Centralize metas, captação, agendas e oportunidades em um fluxo único para o assessor.
             </p>
           </div>
 
@@ -489,7 +489,7 @@ export default function LoginPage() {
             </Button>
 
             <p className="mt-6 text-center text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              {isRegister ? 'Ja tem conta?' : 'Nao tem conta?'}{' '}
+              {isRegister ? 'Já tem conta?' : 'Não tem conta?'}{' '}
               <button
                 type="button"
                 onClick={handleToggleMode}

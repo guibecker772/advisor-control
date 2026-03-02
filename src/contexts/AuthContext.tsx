@@ -65,23 +65,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user?.uid]);
 
   const login = async (email: string, password: string) => {
-    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth não inicializado.');
     await signInWithEmailAndPassword(auth, email, password);
   };
 
   const register = async (email: string, password: string) => {
-    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth não inicializado.');
     await createUserWithEmailAndPassword(auth, email, password);
   };
 
   const logout = async () => {
-    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+    if (!auth) throw new Error(firebaseInit.message || 'Firebase Auth não inicializado.');
     await signOut(auth);
   };
 
   const loginGoogle = async () => {
     if (!auth || !googleProvider) {
-      throw new Error(firebaseInit.message || 'Firebase Auth nao inicializado.');
+      throw new Error(firebaseInit.message || 'Firebase Auth não inicializado.');
     }
     try {
       await signInWithPopup(auth, googleProvider);
