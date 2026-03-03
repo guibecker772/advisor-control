@@ -2,6 +2,7 @@
 import { Link } from 'react-router-dom';
 import type { ChangeEvent } from 'react';
 import {
+  Briefcase,
   DollarSign,
   Package,
   Repeat,
@@ -363,10 +364,24 @@ export default function DashboardPage() {
         progressLabel: 'vs meta',
       },
       {
+        id: 'receita-estimada',
+        title: 'Receita Estimada (Mês)',
+        value: formatCurrency(realizadosMes.receitaEstimada),
+        subtitle: 'Pipeline por competência',
+        icon: Briefcase,
+        accentColor: 'warning' as const,
+        trend: getTrend(realizadosMes.receitaEstimada),
+        trendValue: getTrendText(realizadosMes.receitaEstimada),
+        progress: monthlyGoal && Number(monthlyGoal.metaReceita) > 0
+          ? (realizadosMes.receitaEstimada / Number(monthlyGoal.metaReceita)) * 100
+          : null,
+        progressLabel: 'vs meta',
+      },
+      {
         id: 'receita-realizada',
         title: 'Receita Realizada (Mês)',
         value: formatCurrency(realizadosMes.receita),
-        subtitle: 'Volume de receita do período',
+        subtitle: 'Somente liquidadas',
         icon: DollarSign,
         accentColor: 'success' as const,
         trend: getTrend(realizadosMes.receita),
@@ -400,6 +415,7 @@ export default function DashboardPage() {
     captacaoResumoMes.captacaoLiquida,
     captacaoResumoMes.transferenciaXp,
     realizadosMes.receita,
+    realizadosMes.receitaEstimada,
     roaMensal,
     mesAtual,
   ]);
@@ -453,7 +469,7 @@ export default function DashboardPage() {
         )}
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7 gap-3">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon;
           return (

@@ -18,6 +18,7 @@ import {
   isOfertaEfetuada,
   filtrarOfertasPorMesAno,
   calcularOfertasReceitaMensal,
+  calcularOfertasReceitaEstimadaMensal,
   calcularReceitaCrossMensal,
   calcularSalarioCompletoV2,
   isCrossConcluido,
@@ -326,6 +327,58 @@ describe('Mapeamento de Ofertas para Classes de Salário', () => {
       });
 
       expect(calcularOfertasReceitaMensal([ofertaComDataReserva, ofertaComCreatedAt], 2, 2026)).toBe(1200);
+    });
+  });
+
+  describe('calcularOfertasReceitaEstimadaMensal', () => {
+    const buildOferta = (overrides: Partial<OfferReservation>): OfferReservation => ({
+      nomeAtivo: 'Oferta teste',
+      status: 'LIQUIDADA',
+      commissionMode: 'FIXED_REVENUE',
+      revenueFixed: 0,
+      roaPercent: 0.02,
+      repassePercent: 0.25,
+      irPercent: 0.19,
+      clientes: [],
+      ...overrides,
+    } as OfferReservation);
+
+    it('deve incluir ofertas PENDENTE, RESERVADA e LIQUIDADA na receita estimada', () => {
+      const ofertas = [
+        buildOferta({ competenceMonth: '2026-03', status: 'PENDENTE', revenueFixed: 450 }),
+        buildOferta({ competenceMonth: '2026-03', status: 'RESERVADA', revenueFixed: 300 }),
+        buildOferta({ competenceMonth: '2026-03', status: 'LIQUIDADA', revenueFixed: 200 }),
+      ];
+      expect(calcularOfertasReceitaEstimadaMensal(ofertas, 3, 2026)).toBe(950);
+    });
+
+    it('deve excluir ofertas CANCELADA da receita estimada', () => {
+      const ofertas = [
+        buildOferta({ competenceMonth: '2026-03', status: 'PENDENTE', revenueFixed: 450 }),
+        buildOferta({ competenceMonth: '2026-03', status: 'CANCELADA', revenueFixed: 1000 }),
+      ];
+      expect(calcularOfertasReceitaEstimadaMensal(ofertas, 3, 2026)).toBe(450);
+    });
+
+    it('não deve misturar competências diferentes', () => {
+      const ofertas = [
+        buildOferta({ competenceMonth: '2026-03', status: 'PENDENTE', revenueFixed: 450 }),
+        buildOferta({ competenceMonth: '2026-04', status: 'PENDENTE', revenueFixed: 300 }),
+      ];
+      expect(calcularOfertasReceitaEstimadaMensal(ofertas, 3, 2026)).toBe(450);
+      expect(calcularOfertasReceitaEstimadaMensal(ofertas, 4, 2026)).toBe(300);
+    });
+
+    it('receita realizada deve ser subconjunto da estimada', () => {
+      const ofertas = [
+        buildOferta({ competenceMonth: '2026-03', status: 'PENDENTE', revenueFixed: 450 }),
+        buildOferta({ competenceMonth: '2026-03', status: 'LIQUIDADA', revenueFixed: 200 }),
+      ];
+      const estimada = calcularOfertasReceitaEstimadaMensal(ofertas, 3, 2026);
+      const realizada = calcularOfertasReceitaMensal(ofertas, 3, 2026);
+      expect(estimada).toBe(650);
+      expect(realizada).toBe(200);
+      expect(estimada).toBeGreaterThanOrEqual(realizada);
     });
   });
 

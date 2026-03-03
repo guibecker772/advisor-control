@@ -319,6 +319,9 @@ export function calcularComposicaoReceita(registros: CustodiaReceita[]): { label
 /**
  * Calcula receita de Ofertas/Ativos para um mês específico
  * Considera competência da oferta no mês/ano e gate de status liquidada
+ *
+ * REGRA: Receita Realizada — somente ofertas com status LIQUIDADA.
+ * Para incluir ofertas pendentes/reservadas use calcularOfertasReceitaEstimadaMensal.
  */
 export function calcularOfertasReceitaMensal(ofertas: OfferReservation[], mes: number, ano: number): number {
   const targetCompetenceMonth = `${ano}-${String(mes).padStart(2, '0')}`;
@@ -331,6 +334,42 @@ export function calcularOfertasReceitaMensal(ofertas: OfferReservation[], mes: n
       const rawCompetenceMonth = offer.competenceMonth;
       if (!isValidCompetenceMonth(rawCompetenceMonth) && !fallbackDate) {
         // Sem competência válida e sem fallback temporal, não há como atribuir período.
+        return false;
+      }
+
+      const competenceMonth = normalizeCompetenceMonth(rawCompetenceMonth, fallbackDate);
+      return competenceMonth === targetCompetenceMonth;
+    })
+    .reduce((sum, offer) => sum + calcOfferReservationTotals(offer).revenueHouse, 0);
+}
+
+/** Status considerados para receita estimada (pipeline) — tudo exceto CANCELADA */
+const OFFER_ESTIMATED_STATUSES: Set<string> = new Set(['PENDENTE', 'RESERVADA', 'LIQUIDADA']);
+
+/**
+ * Calcula receita ESTIMADA de Ofertas/Ativos para um mês específico.
+ *
+ * REGRA: Receita Estimada — considera todas as ofertas NÃO canceladas
+ * (PENDENTE, RESERVADA e LIQUIDADA) na competência do mês.
+ * Representa o pipeline de receita esperado, independente da liquidação.
+ *
+ * Utilizado pelo módulo Salário (sincronização) e pelo KPI "Receita Estimada"
+ * no Dashboard. Centralizado aqui para evitar lógica duplicada.
+ */
+export function calcularOfertasReceitaEstimadaMensal(
+  ofertas: OfferReservation[],
+  mes: number,
+  ano: number,
+): number {
+  const targetCompetenceMonth = `${ano}-${String(mes).padStart(2, '0')}`;
+  return ofertas
+    .filter((offer) => {
+      const status = normalizeOfferStatus(offer.status);
+      if (!OFFER_ESTIMATED_STATUSES.has(status)) return false;
+
+      const fallbackDate = offer.dataReserva || offer.createdAt;
+      const rawCompetenceMonth = offer.competenceMonth;
+      if (!isValidCompetenceMonth(rawCompetenceMonth) && !fallbackDate) {
         return false;
       }
 
@@ -832,7 +871,10 @@ export function calcularReceitaRealizadaTotal(plano: PlanoReceitas): number {
 // ============== CÁLCULOS PARA METAS MENSAIS ==============
 
 export interface MonthlyActuals {
+  /** Receita realizada (somente ofertas LIQUIDADA + Custódia + Cross concluído) */
   receita: number;
+  /** Receita estimada (todas ofertas não-canceladas por competência + Custódia + Cross concluído) */
+  receitaEstimada: number;
   captacaoLiquida: number;
   transferenciaXp: number;
 }
@@ -971,8 +1013,13 @@ export function calcularTransferenciaXpMensal(lancamentos: CaptacaoLancamento[],
 }
 
 /**
- * Calcula todos os realizados do mês para comparar com metas
- * Receita inclui: Custódia x Receita + Ofertas/Ativos + Cross Selling
+ * Calcula todos os realizados do mês para comparar com metas.
+ *
+ * Retorna dois valores de receita:
+ * - `receita`         → Receita **Realizada** (ofertas LIQUIDADA + Custódia + Cross concluído)
+ * - `receitaEstimada` → Receita **Estimada / Pipeline** (ofertas não-canceladas por competência + Custódia + Cross concluído)
+ *
+ * Isso garante que Dashboard, Metas e Salário consumam a mesma fonte de verdade.
  */
 export function calcularRealizadosMensal(
   custodiaReceita: CustodiaReceita[],
@@ -987,14 +1034,20 @@ export function calcularRealizadosMensal(
     .filter(c => c.mes === mes && c.ano === ano)
     .reduce((sum, c) => sum + calcularReceitaRegistro(c), 0);
 
-  // Receita Ofertas: soma de revenueHouse das ofertas liquidadas realizadas na competência do mês
-  const receitaOfertas = calcularOfertasReceitaMensal(ofertas, mes, ano);
+  // Receita Ofertas Realizada: somente LIQUIDADA
+  const receitaOfertasRealizada = calcularOfertasReceitaMensal(ofertas, mes, ano);
 
-  // Receita Cross: soma de realizedValue ou comissão das vendas concluídas no mês
+  // Receita Ofertas Estimada: PENDENTE + RESERVADA + LIQUIDADA (pipeline)
+  const receitaOfertasEstimada = calcularOfertasReceitaEstimadaMensal(ofertas, mes, ano);
+
+  // Receita Cross: soma de comissão das vendas concluídas no mês
   const receitaCross = calcularCrossRealizadoMensal(crosses, mes, ano);
 
-  // Receita total = Custódia + Ofertas + Cross
-  const receita = receitaCustodia + receitaOfertas + receitaCross;
+  // Receita Realizada = Custódia + Ofertas Liquidadas + Cross concluído
+  const receita = receitaCustodia + receitaOfertasRealizada + receitaCross;
+
+  // Receita Estimada = Custódia + Ofertas Pipeline + Cross concluído
+  const receitaEstimada = receitaCustodia + receitaOfertasEstimada + receitaCross;
 
   // Captação líquida: entradas - saídas (pode ser negativa)
   const captacaoLiquida = calcularCaptacaoLiquidaMensal(captacoes, mes, ano);
@@ -1004,6 +1057,7 @@ export function calcularRealizadosMensal(
 
   return {
     receita,
+    receitaEstimada,
     captacaoLiquida,
     transferenciaXp,
   };
