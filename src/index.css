@@ -353,6 +353,14 @@ table tbody tr:hover,
   .animate-slide-up {
     animation: slideUp 0.3s ease-out;
   }
+
+  .animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  .animate-slide-in-left {
+    animation: slideInLeft 0.3s ease-out;
+  }
 }
 
 @keyframes fadeIn {
@@ -372,6 +380,24 @@ table tbody tr:hover,
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
   }
 }
 
@@ -535,4 +561,58 @@ table tbody tr:hover,
 
 .fc-custom .fc-day-other .fc-daygrid-day-number {
   color: var(--color-text-muted);
+}
+
+/* ===========================================
+   PLANNING MODULE — Visual Refinements
+   =========================================== */
+
+/* Planning section cards: subtle elevation */
+@layer components {
+  .planning-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 0.75rem;
+    transition: border-color 0.2s;
+  }
+  .planning-card:hover {
+    border-color: var(--color-border);
+  }
+}
+
+/* Planning task cards: stronger click target feel */
+@layer components {
+  .planning-task-card {
+    @apply rounded-lg transition-all duration-150;
+    border: 1px solid var(--color-border-subtle);
+    background-color: var(--color-surface-2);
+  }
+  .planning-task-card:hover {
+    background-color: var(--color-surface-3);
+    border-color: var(--color-border);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* Planning overdue indicator: pulsing glow for critical items */
+@layer utilities {
+  .planning-overdue-glow {
+    box-shadow: inset 3px 0 0 var(--color-danger), 0 0 0 1px var(--color-danger-bg);
+  }
+}
+
+/* Planning chip active state: better dark contrast */
+@layer components {
+  .planning-chip-active {
+    color: white;
+    font-weight: 600;
+  }
+}
+
+/* Planning timeline free slot hover: smoother transition */
+@layer components {
+  .planning-timeline-free:hover {
+    background-color: var(--color-surface-2);
+    border-radius: 0.5rem;
+  }
 }

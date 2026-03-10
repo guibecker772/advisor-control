@@ -25,6 +25,7 @@ import type {
   Reserva,
   Salario,
 } from '../domain/types';
+import type { ClientProduct } from '../domain/types/clientProduct';
 import type {
   CalendarAccount,
   CalendarEvent,
@@ -517,3 +518,13 @@ export const calendarEventRepository = createRepository<CalendarEvent>('calendar
 export const calendarAccountRepository = createRepository<CalendarAccount>('calendar_accounts');
 export const notificationRepository = createRepository<Notification>('notifications');
 export const eventReminderRepository = createRepository<EventReminder>('event_reminders');
+export const clientProductRepository = createRepository<ClientProduct>('client_products');
+
+// Planning module
+import type { PlanningTask, PlanningBlock, DailyReview, WeeklyChecklistState, MonthlyChecklistState, AutomationPreferences } from '../domain/planning/planningTypes';
+export const planningTaskRepository = createRepository<PlanningTask>('planning_tasks');
+export const planningBlockRepository = createRepository<PlanningBlock>('planning_blocks');
+export const dailyReviewRepository = createRepository<DailyReview>('daily_reviews');
+export const weeklyChecklistRepository = createRepository<WeeklyChecklistState>('weekly_checklists');
+export const monthlyChecklistRepository = createRepository<MonthlyChecklistState>('monthly_checklists');
+export const automationPreferencesRepository = createRepository<AutomationPreferences>('automation_preferences');

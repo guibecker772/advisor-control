@@ -439,6 +439,7 @@ export const monthlyGoalsSchema = z.object({
   metaReceita: z.number().min(0).optional().default(0),
   metaCaptacaoLiquida: z.number().optional().default(0), // Pode ser negativa
   metaTransferenciaXp: z.number().optional().default(0), // Pode ser negativa
+  metaROAAnual: z.number().min(0).max(1).optional().default(0.01), // Decimal: 0.01 = 1%
   
   observacoes: z.string().optional(),
   ownerUid: z.string().optional(),
@@ -448,6 +449,19 @@ export const monthlyGoalsSchema = z.object({
 
 export type MonthlyGoals = z.output<typeof monthlyGoalsSchema>;
 export type MonthlyGoalsInput = z.input<typeof monthlyGoalsSchema>;
+
+// ============== CLIENT PRODUCT (re-export) ==============
+export {
+  clientProductSchema,
+  CLIENT_PRODUCT_TYPES,
+  CLIENT_PRODUCT_STATUS,
+  CLIENT_PRODUCT_TYPE_LABELS,
+  CLIENT_PRODUCT_STATUS_LABELS,
+  type ClientProduct,
+  type ClientProductInput,
+  type ClientProductType,
+  type ClientProductStatus,
+} from './clientProduct';
 
 
 

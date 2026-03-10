@@ -23,6 +23,7 @@ const CaptacaoPage = lazy(() => import('./pages/captacao/CaptacaoPage'));
 const MetasPage = lazy(() => import('./pages/metas/MetasPage'));
 const AgendasPage = lazy(() => import('./pages/agendas/AgendasPage'));
 const WealthPlaceholder = lazy(() => import('./pages/wealth/WealthPlaceholder'));
+const PlanningPage = lazy(() => import('./pages/planning/PlanningPage'));
 const PrivateWealthCallbackPage = lazy(() => import('./pages/integrations/PrivateWealthCallbackPage'));
 
 function RouteLoadingFallback() {
@@ -64,6 +65,7 @@ function App() {
                     <Route path="agendas" element={<AgendasPage />} />
                     <Route path="metas" element={<MetasPage />} />
                     <Route path="salario" element={<SalarioPage />} />
+                    <Route path="planejamento" element={<PlanningPage />} />
                     <Route path="wealth" element={<WealthPlaceholder />} />
                     {/* Redirects para rotas antigas (removidas) */}
                     <Route path="reservas" element={<Navigate to="/" replace />} />

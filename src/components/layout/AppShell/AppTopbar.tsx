@@ -18,6 +18,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/agendas': 'Agendas',
   '/metas': 'Metas',
   '/salario': 'Salário',
+  '/planejamento': 'Planejamento',
   '/wealth': 'Private Wealth',
 };
 

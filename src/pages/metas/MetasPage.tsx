@@ -53,6 +53,7 @@ export default function MetasPage() {
       metaReceita: 0,
       metaCaptacaoLiquida: 0,
       metaTransferenciaXp: 0,
+      metaROAAnual: 0.01,
       observacoes: '',
     },
   });
@@ -86,6 +87,7 @@ export default function MetasPage() {
           metaReceita: goal.metaReceita || 0,
           metaCaptacaoLiquida: goal.metaCaptacaoLiquida || 0,
           metaTransferenciaXp: goal.metaTransferenciaXp || 0,
+          metaROAAnual: goal.metaROAAnual ?? 0.01,
           observacoes: goal.observacoes || '',
         });
       } else {
@@ -95,6 +97,7 @@ export default function MetasPage() {
           metaReceita: 0,
           metaCaptacaoLiquida: 0,
           metaTransferenciaXp: 0,
+          metaROAAnual: 0.01,
           observacoes: '',
         });
       }
@@ -155,6 +158,7 @@ export default function MetasPage() {
         metaReceita: data.metaReceita ?? 0,
         metaCaptacaoLiquida: data.metaCaptacaoLiquida ?? 0,
         metaTransferenciaXp: data.metaTransferenciaXp ?? 0,
+        metaROAAnual: data.metaROAAnual ?? 0.01,
         observacoes: data.observacoes || '',
       };
       
@@ -403,7 +407,7 @@ export default function MetasPage() {
         </h2>
         
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Meta de Receita */}
             <div>
               <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
@@ -457,6 +461,27 @@ export default function MetasPage() {
               {errors.metaTransferenciaXp && (
                 <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.metaTransferenciaXp.message}</p>
               )}
+            </div>
+
+            {/* Meta de ROA Anual */}
+            <div>
+              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                Meta ROA Anual (%)
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                min="0"
+                max="1"
+                {...register('metaROAAnual', { valueAsNumber: true })}
+                className="w-full px-3 py-2 rounded-lg focus-gold"
+                style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
+                placeholder="0.01"
+              />
+              {errors.metaROAAnual && (
+                <p className="mt-1 text-sm" style={{ color: 'var(--color-danger)' }}>{errors.metaROAAnual.message}</p>
+              )}
+              <p className="mt-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>Decimal: 0.01 = 1%, 0.008 = 0,8%</p>
             </div>
           </div>
 

@@ -11,6 +11,7 @@ import {
   Package,
   Goal,
   Calendar,
+  ClipboardList,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -30,6 +31,7 @@ const navigationGroups = [
     items: [
       { name: 'Visão Geral', href: '/', icon: LayoutDashboard },
       { name: 'Agendas', href: '/agendas', icon: Calendar },
+      { name: 'Planejamento', href: '/planejamento', icon: ClipboardList },
     ],
   },
   {

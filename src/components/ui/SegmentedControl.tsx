@@ -22,25 +22,27 @@ export function SegmentedControl({
   size = 'md',
   className = '',
 }: SegmentedControlProps) {
+  const safeOptions = Array.isArray(options) ? options : [];
+
   const optionIndexMap = useMemo(
-    () => new Map(options.map((option, index) => [option.value, index])),
-    [options],
+    () => new Map(safeOptions.map((option, index) => [option.value, index])),
+    [safeOptions],
   );
 
   const moveSelection = useCallback((currentIndex: number, direction: 1 | -1) => {
-    if (options.length === 0 || currentIndex < 0) return;
+    if (safeOptions.length === 0 || currentIndex < 0) return;
 
     let nextIndex = currentIndex;
 
-    for (let step = 0; step < options.length; step += 1) {
-      nextIndex = (nextIndex + direction + options.length) % options.length;
-      const nextOption = options[nextIndex];
+    for (let step = 0; step < safeOptions.length; step += 1) {
+      nextIndex = (nextIndex + direction + safeOptions.length) % safeOptions.length;
+      const nextOption = safeOptions[nextIndex];
       if (!nextOption.disabled) {
         onChange(nextOption.value);
         break;
       }
     }
-  }, [onChange, options]);
+  }, [onChange, safeOptions]);
 
   const sizeClasses = {
     sm: 'px-2.5 py-1.5 text-xs gap-1',
@@ -57,7 +59,7 @@ export function SegmentedControl({
         }}
         role="group"
       >
-        {options.map((option) => {
+        {safeOptions.map((option) => {
           const isActive = option.value === value;
           const currentIndex = optionIndexMap.get(option.value) ?? -1;
 

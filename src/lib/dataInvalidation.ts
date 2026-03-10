@@ -7,7 +7,8 @@ export type InvalidationScope =
   | 'offers'
   | 'salary'
   | 'cross'
-  | 'agendas';
+  | 'agendas'
+  | 'planning';
 
 const EVENT_NAME = 'ac:data-invalidated';
 

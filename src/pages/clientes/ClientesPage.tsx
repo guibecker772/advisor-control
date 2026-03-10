@@ -2,7 +2,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ColumnDef, type SortingState } from '@tanstack/react-table';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -27,20 +27,16 @@ import {
   Tooltip,
 } from '../../components/ui';
 import SavedViewsControl from '../../components/saved-views/SavedViewsControl';
-import ClientSummaryPanel from '../../components/clientes/ClientSummaryPanel';
+import Client360Drawer from '../../components/clientes/Client360Drawer';
 import ClientImportWizardDialog from '../../components/clientes/ClientImportWizardDialog';
 import { type SavedViewSnapshot } from '../../lib/savedViews';
 import { resolveAccessCapabilities } from '../../lib/access';
 import { subscribeDataInvalidation } from '../../lib/dataInvalidation';
 import {
-  getAdvisorClientLink,
-} from '../../services/privateWealthIntegration';
-import { openPrivateWealthInNewTab } from '../../services/privateWealthLauncher';
-import {
-  type PerfilFiltro,
-  type PerfilInvestidor,
   parsePerfilFiltro,
   parsePerfilFromQuery,
+  type PerfilFiltro,
+  type PerfilInvestidor,
 } from './utils/perfilFiltro';
 
 const statusOptions = [
@@ -409,6 +405,43 @@ export default function ClientesPage() {
         accessorKey: 'custodiaAtual',
         header: 'Custódia',
         cell: (info) => <CurrencyCell value={info.getValue() as number} />,
+      },
+      {
+        id: 'indicadores',
+        header: 'Indicadores',
+        cell: (info) => {
+          const c = info.row.original;
+          const clienteId = c.id;
+          const tem_reuniao = clienteId ? reunioesMap[clienteId]?.realizada : false;
+          const custodia = c.custodiaAtual ?? 0;
+          const badges: { emoji: string; label: string; color: string }[] = [];
+
+          if (!tem_reuniao) {
+            badges.push({ emoji: '💤', label: 'Sem reunião', color: 'var(--color-warning)' });
+          }
+          if (custodia > 500_000) {
+            badges.push({ emoji: '💰', label: 'Alto potencial', color: 'var(--color-gold)' });
+          }
+
+          if (badges.length === 0) return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
+          return (
+            <div className="flex flex-wrap gap-1">
+              {badges.map((b) => (
+                <span
+                  key={b.label}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+                  title={b.label}
+                  style={{
+                    backgroundColor: `color-mix(in srgb, ${b.color} 15%, transparent)`,
+                    color: b.color,
+                  }}
+                >
+                  {b.emoji}
+                </span>
+              ))}
+            </div>
+          );
+        },
       },
       {
         accessorKey: 'status',
@@ -808,9 +841,9 @@ export default function ClientesPage() {
         }}
       />
 
-      {/* Modal de Detalhes do Cliente */}
+      {/* Client 360 Drawer */}
       {selectedCliente && (
-        <ClienteDetalhesModal
+        <Client360Drawer
           isOpen={detalhesModalOpen}
           onClose={() => setDetalhesModalOpen(false)}
           cliente={selectedCliente}
@@ -827,241 +860,7 @@ export default function ClientesPage() {
   );
 }
 
-// ============== COMPONENTE MODAL DETALHES ==============
-interface DetalhesModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  cliente: Cliente;
-  mes: number;
-  ano: number;
-  reuniao?: ClienteReuniao;
-  onReuniaoSaved: (r: ClienteReuniao) => void;
-}
 
-function ClienteDetalhesModal({ isOpen, onClose, cliente, mes, ano, reuniao, onReuniaoSaved }: DetalhesModalProps) {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [realizada, setRealizada] = useState(reuniao?.realizada || false);
-  const [observacoes, setObservacoes] = useState(reuniao?.observacoes || '');
-  const [saving, setSaving] = useState(false);
-  const [openingPlanning, setOpeningPlanning] = useState(false);
-  const [openingExport, setOpeningExport] = useState(false);
-  const [hasPersistedLink, setHasPersistedLink] = useState(false);
-
-  const access = resolveAccessCapabilities(user);
-  const canLinkNewClient = !access.readOnly;
-  const canOpenPlanning = hasPersistedLink || canLinkNewClient;
-  const canOpenExport = access.canExportPrivateWealthReport && (hasPersistedLink || canLinkNewClient);
-  const canCreateEvent = access.canCreateEvent;
-  const planningDisabledReason = !canOpenPlanning ? 'Sem permissão para vincular' : undefined;
-  const exportDisabledReason = !access.canExportPrivateWealthReport
-    ? 'Sem permissão para exportar'
-    : !canOpenExport
-      ? 'Sem permissão para vincular'
-      : undefined;
-  const createEventDisabledReason = canCreateEvent ? undefined : 'Sem permissão para criar evento';
-
-  // Reset ao trocar cliente ou período
-  useEffect(() => {
-    setRealizada(reuniao?.realizada || false);
-    setObservacoes(reuniao?.observacoes || '');
-  }, [reuniao, cliente.id, mes, ano]);
-
-  useEffect(() => {
-    if (!isOpen || !user || !cliente.id) {
-      setHasPersistedLink(false);
-      return;
-    }
-
-    const existingLink = getAdvisorClientLink(cliente.id, user);
-    setHasPersistedLink(Boolean(existingLink));
-  }, [cliente.id, isOpen, user]);
-
-  const mesNome = new Date(2000, mes - 1).toLocaleString('pt-BR', { month: 'long' });
-  const perfilCliente = getPerfilInvestidor(cliente);
-
-  const handleSaveReuniao = async () => {
-    if (!user || !cliente.id) return;
-    try {
-      setSaving(true);
-      if (reuniao?.id) {
-        const updated = await clienteReuniaoRepository.update(reuniao.id, { realizada, observacoes }, user.uid);
-        if (updated) { onReuniaoSaved(updated); toast.success('Reunião atualizada!'); }
-      } else {
-        const created = await clienteReuniaoRepository.create({ clienteId: cliente.id, mes, ano, realizada, observacoes }, user.uid);
-        onReuniaoSaved(created); toast.success('Reunião salva!');
-      }
-    } catch (error) {
-      console.error('Erro ao salvar Reunião:', error);
-      toast.error('Erro ao salvar Reunião');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleOpenPlanning = async () => {
-    if (!user || !cliente.id || !canOpenPlanning) return;
-
-    try {
-      setOpeningPlanning(true);
-      const response = await openPrivateWealthInNewTab({
-        acClientId: cliente.id,
-        intent: 'open_planning',
-        user,
-      });
-
-      if (response.kind === 'linked') {
-        toast.success('Abrindo planejamento no Private Wealth...');
-      } else {
-        toast.success('Abra a nova aba para vincular o cliente e abrir o planejamento.');
-      }
-    } catch (error) {
-      console.error('Erro ao abrir planejamento:', error);
-      if (error instanceof Error && error.message === 'LINK_FORBIDDEN') {
-        toast.error('Sem permissão para vincular este cliente.');
-      } else {
-        toast.error('Não foi possível abrir. Tente novamente.');
-      }
-    } finally {
-      setOpeningPlanning(false);
-    }
-  };
-
-  const handleOpenExport = async () => {
-    if (!user || !cliente.id || !canOpenExport) return;
-
-    try {
-      setOpeningExport(true);
-      const response = await openPrivateWealthInNewTab({
-        acClientId: cliente.id,
-        intent: 'export_premium',
-        user,
-      });
-
-      if (response.kind === 'linked') {
-        toast.success('Abrindo export premium no Private Wealth...');
-      } else {
-        toast.success('Abra a nova aba para vincular e gerar o relatório premium.');
-      }
-    } catch (error) {
-      console.error('Erro ao abrir export premium:', error);
-      if (error instanceof Error && error.message === 'EXPORT_FORBIDDEN') {
-        toast.error('Sem permissão para exportar.');
-      } else if (error instanceof Error && error.message === 'LINK_FORBIDDEN') {
-        toast.error('Sem permissão para vincular este cliente.');
-      } else {
-        toast.error('Não foi possível abrir. Tente novamente.');
-      }
-    } finally {
-      setOpeningExport(false);
-    }
-  };
-
-  const handleCreateEvent = () => {
-    if (!canCreateEvent) return;
-    const params = new URLSearchParams({ quickCreate: '1' });
-    if (cliente.id) {
-      params.set('clientId', cliente.id);
-    }
-    navigate(`/agendas?${params.toString()}`);
-  };
-
-  const handleViewAgendas = () => {
-    if (cliente.id) {
-      const params = new URLSearchParams({ clientId: cliente.id });
-      navigate(`/agendas?${params.toString()}`);
-      return;
-    }
-    navigate('/agendas');
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Detalhes do Cliente" size="lg">
-      <div className="space-y-6">
-        <ClientSummaryPanel
-          client={cliente}
-          ownerUid={user?.uid}
-          isPwLinked={hasPersistedLink}
-          openingPlanning={openingPlanning}
-          openingExport={openingExport}
-          canOpenPlanning={canOpenPlanning}
-          canOpenExport={canOpenExport}
-          canCreateEvent={canCreateEvent}
-          planningDisabledReason={planningDisabledReason}
-          exportDisabledReason={exportDisabledReason}
-          createEventDisabledReason={createEventDisabledReason}
-          onLinkPw={handleOpenPlanning}
-          onOpenPlanning={handleOpenPlanning}
-          onOpenExport={handleOpenExport}
-          onCreateEvent={handleCreateEvent}
-          onViewAgendas={handleViewAgendas}
-        />
-
-        {/* Info do Cliente */}
-        <div className="p-4 rounded-lg space-y-3" style={{ backgroundColor: 'var(--color-surface-2)' }}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
-            <h3 className="font-semibold text-lg" style={{ color: 'var(--color-text)' }}>{cliente.nome}</h3>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleOpenPlanning}
-                disabled={openingPlanning || !canOpenPlanning}
-                title={planningDisabledReason}
-                className="px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}
-              >
-                {openingPlanning ? 'Abrindo...' : 'Abrir Planejamento'}
-              </button>
-              <button
-                type="button"
-                onClick={handleOpenExport}
-                disabled={openingExport || !canOpenExport}
-                title={exportDisabledReason}
-                className="px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
-              >
-                {openingExport ? 'Abrindo...' : 'Gerar relatório (PW)'}
-              </button>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><span style={{ color: 'var(--color-text-muted)' }}>Código da Conta:</span> <span className="font-mono font-medium" style={{ color: 'var(--color-text)' }}>{cliente.codigoConta || '-'}</span></div>
-            <div>
-              <span style={{ color: 'var(--color-text-muted)' }}>Perfil:</span>{' '}
-              <Badge className="ml-2" variant={getPerfilBadgeVariant(perfilCliente)}>
-                {perfilCliente}
-              </Badge>
-            </div>
-            <div><span style={{ color: 'var(--color-text-muted)' }}>Status:</span> <span className="font-medium" style={{ color: 'var(--color-text)' }}>{cliente.status || '-'}</span></div>
-            <div><span style={{ color: 'var(--color-text-muted)' }}>Custódia:</span> <span className="font-medium" style={{ color: 'var(--color-text)' }}>{formatCurrency(cliente.custodiaAtual || 0)}</span></div>
-          </div>
-        </div>
-
-        {/* Reunião do período */}
-        <div className="pt-4" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
-          <h4 className="font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Reunião de {mesNome} {ano}</h4>
-          <div className="space-y-4">
-            <label className="flex items-center space-x-3 cursor-pointer">
-              <input type="checkbox" checked={realizada} onChange={(e) => setRealizada(e.target.checked)} className="w-5 h-5 rounded" style={{ accentColor: 'var(--color-gold)' }} />
-              <span style={{ color: 'var(--color-text-secondary)' }}>Reunião realizada</span>
-            </label>
-            <div>
-              <label className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-secondary)' }}>ObservAções da Reunião</label>
-              <textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-md focus-gold" style={{ backgroundColor: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }} placeholder="AnotAções sobre a Reunião..." />
-            </div>
-            <button onClick={handleSaveReuniao} disabled={saving} className="px-4 py-2 rounded-md disabled:opacity-50 transition-colors" style={{ backgroundColor: 'var(--color-gold)', color: 'var(--color-text-inverse)' }}>
-              {saving ? 'Salvando...' : 'Salvar Reunião'}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex justify-end pt-4" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium rounded-md transition-colors" style={{ color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)' }}>Fechar</button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
 
 
 

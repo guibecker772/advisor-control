@@ -3,6 +3,7 @@ export { BaseCard, KpiCard, SectionHeader, TableContainer } from './Card';
 export { Button, IconButton } from './Button';
 export { Input, Textarea, Select } from './Input';
 export { Modal, ConfirmDialog } from './Modal';
+export { Drawer } from './Drawer';
 export { Badge, Chip } from './Badge';
 export { Tabs } from './Tabs';
 export { PageHeader } from './PageHeader';

@@ -27,12 +27,12 @@ import {
 } from '../../services/repositories';
 import {
   calcularCustodiaTotal,
-  calcularROA,
   calcularRealizadosMensal,
   formatCurrency,
   formatPercent,
   getNomeMes,
 } from '../../domain/calculations';
+import { calculateRoaGoalMetrics } from '../../domain/calculations/roaGoals';
 import { getCaptacaoResumoPeriodo } from '../../domain/calculations/captacaoPeriodo';
 import {
   competenceMonthToMonthYear,
@@ -215,7 +215,7 @@ export default function DashboardPage() {
       ] = await Promise.all([
         clienteRepository.getAll(ownerUid),
         prospectRepository.getAll(ownerUid),
-        custodiaReceitaRepository.getByMonth(ownerUid, mesAtual, anoAtual),
+        custodiaReceitaRepository.getAll(ownerUid),
         monthlyGoalsRepository.getAll(ownerUid),
         captacaoLancamentoRepository.getAll(ownerUid),
         offerReservationRepository.getAll(ownerUid),
@@ -308,10 +308,36 @@ export default function DashboardPage() {
     return getCaptacaoResumoPeriodo(captacaoLancamentos, mesAtual, anoAtual);
   }, [captacaoLancamentos, mesAtual, anoAtual]);
 
-  const roaMensal = useMemo(() => {
-    const custodiaMedia = custodiaTotal > 0 ? custodiaTotal : 1;
-    return calcularROA(realizadosMes.receita, custodiaMedia);
-  }, [custodiaTotal, realizadosMes.receita]);
+  const roaGoalMetrics = useMemo(() => {
+    const custodiaMes = custodiaTotal > 0 ? custodiaTotal : 1;
+    const receitaMes = realizadosMes.receita;
+    const roaMetaAnual = monthlyGoal?.metaROAAnual ?? 0.01;
+
+    // Receita acumulada no ano (jan..mesAtual)
+    let receitaAcumuladaAno = 0;
+    for (let m = 1; m <= mesAtual; m++) {
+      const realizadosMesLoop = calcularRealizadosMensal(
+        custodiaReceita,
+        captacaoLancamentos,
+        m,
+        anoAtual,
+        offers,
+        crosses,
+      );
+      receitaAcumuladaAno += realizadosMesLoop.receita;
+    }
+
+    // Custódia média do ano = snapshot atual (melhor aproximação disponível)
+    const custodiaMediaAno = custodiaMes;
+
+    return calculateRoaGoalMetrics(
+      custodiaMes,
+      receitaMes,
+      receitaAcumuladaAno,
+      custodiaMediaAno,
+      roaMetaAnual,
+    );
+  }, [custodiaTotal, realizadosMes.receita, monthlyGoal?.metaROAAnual, mesAtual, custodiaReceita, captacaoLancamentos, anoAtual, offers, crosses]);
 
   const kpiCards = useMemo(() => {
     const getTrend = (value: number): 'up' | 'down' | 'neutral' => {
@@ -392,12 +418,15 @@ export default function DashboardPage() {
         progressLabel: 'vs meta',
       },
       {
-        id: 'roa-mensal',
-        title: 'ROA Mensal',
-        value: formatPercent(roaMensal, 2),
-        subtitle: 'Receita / Custódia média',
+        id: 'roa-ritmo',
+        title: 'ROA (Ritmo Mensal)',
+        value: formatPercent(roaGoalMetrics.ritmoMeta * 100, 1),
+        subtitle: `Meta mensal: ${formatCurrency(roaGoalMetrics.metaReceitaMensal)} | ROA anual: ${formatPercent((monthlyGoal?.metaROAAnual ?? 0.01) * 100, 2)}`,
+        hint: `ROA técnico: ${formatPercent(roaGoalMetrics.roaMensal * 100, 4)} (receita/custódia)`,
         icon: Target,
-        accentColor: 'gold' as const,
+        accentColor: roaGoalMetrics.ritmoLevel === 'above' ? 'success' as const
+          : roaGoalMetrics.ritmoLevel === 'on-track' ? 'warning' as const
+          : 'danger' as const,
       },
       {
         id: 'clientes-ativos',
@@ -416,7 +445,8 @@ export default function DashboardPage() {
     captacaoResumoMes.transferenciaXp,
     realizadosMes.receita,
     realizadosMes.receitaEstimada,
-    roaMensal,
+    roaGoalMetrics,
+    monthlyGoal,
     mesAtual,
   ]);
 
@@ -478,6 +508,7 @@ export default function DashboardPage() {
               title={kpi.title}
               value={kpi.value}
               subtitle={kpi.subtitle}
+              hint={kpi.hint}
               icon={<Icon className="w-5 h-5" />}
               accentColor={kpi.accentColor}
               trend={kpi.trend}
