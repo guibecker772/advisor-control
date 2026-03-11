@@ -156,6 +156,13 @@ export function filterWeekTasks(tasks: PlanningTask[], date: Date = new Date()):
   return tasks.filter((t) => t.date >= startStr && t.date <= endStr);
 }
 
+export function filterWeekBlocks(blocks: PlanningBlock[], date: Date = new Date()): PlanningBlock[] {
+  const { start, end } = getWeekRange(date);
+  const startStr = toDateString(start);
+  const endStr = toDateString(end);
+  return blocks.filter((b) => b.date >= startStr && b.date <= endStr);
+}
+
 export function filterMonthTasks(tasks: PlanningTask[], date: Date = new Date()): PlanningTask[] {
   const { start, end } = getMonthRange(date);
   const startStr = toDateString(start);

@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import { ToolProvider } from './contexts/ToolContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { FocusModeProvider } from './contexts/FocusModeContext';
 import FirebaseConfigErrorScreen from './components/FirebaseConfigErrorScreen';
 import { firebaseInit } from './services/firebase';
 
@@ -51,6 +52,7 @@ function App() {
         <AuthProvider>
           <NotificationProvider>
             <ToolProvider>
+              <FocusModeProvider>
               <Suspense fallback={<RouteLoadingFallback />}>
                 <Routes>
                   <Route path="/login" element={<LoginPage />} />
@@ -75,6 +77,7 @@ function App() {
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </Suspense>
+              </FocusModeProvider>
             </ToolProvider>
           </NotificationProvider>
         </AuthProvider>

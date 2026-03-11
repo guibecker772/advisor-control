@@ -13,6 +13,7 @@ import {
 } from '../../domain/planning/planningConstants';
 import { formatDatePtBR, formatDuration } from '../../domain/planning/planningUtils';
 import { getTaskEntityRoute } from '../../domain/planning/planningIntegration';
+import { useFocusMode } from '../../contexts/FocusModeContext';
 import {
   Check,
   Clock,
@@ -21,6 +22,7 @@ import {
   Archive,
   ArrowRight,
   ExternalLink,
+  Target,
 } from 'lucide-react';
 
 interface TaskDrawerProps {
@@ -48,6 +50,7 @@ export default function TaskDrawer({
   const [rescheduleEnd, setRescheduleEnd] = useState('');
   const [acting, setActing] = useState(false);
   const navigate = useNavigate();
+  const { startFromTask, status: focusStatus } = useFocusMode();
 
   if (!task) return null;
 
@@ -102,6 +105,24 @@ export default function TaskDrawer({
             >
               Editar
             </Button>
+            {focusStatus === 'idle' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<Target className="w-4 h-4" />}
+                onClick={() => {
+                  startFromTask({
+                    id: task.id!,
+                    title: task.title,
+                    context: TASK_TYPE_LABELS[task.type],
+                    durationMinutes: task.durationMinutes > 0 ? task.durationMinutes : undefined,
+                  });
+                  onClose();
+                }}
+              >
+                Focar
+              </Button>
+            )}
           </>
         ) : undefined
       }

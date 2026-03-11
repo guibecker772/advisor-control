@@ -1,9 +1,12 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useEffect } from 'react';
 import { PageContainer, PageHeader, Tabs, PageSkeleton } from '../../components/ui';
 import { Settings } from 'lucide-react';
 import { usePlanning } from '../../hooks/usePlanning';
 import { useAutomationPreferences } from '../../hooks/useAutomationPreferences';
+import { useAgendaEvents } from '../../hooks/useAgendaEvents';
+import { useFocusMode } from '../../contexts/FocusModeContext';
 import TodayTab from './tabs/TodayTab';
+import PlanningErrorBoundary from '../../components/planning/PlanningErrorBoundary';
 
 // Lazy-loaded tabs (só carregam quando o usuário navega para elas)
 const WeekTab = lazy(() => import('./tabs/WeekTab'));
@@ -43,6 +46,25 @@ export default function PlanningPage() {
   const [showPrefs, setShowPrefs] = useState(false);
   const planning = usePlanning();
   const { prefs: automationPrefs, saving, save } = useAutomationPreferences();
+  const { events: agendaEvents } = useAgendaEvents();
+  const { setDailyGoalMinutes, dailyGoalMinutes } = useFocusMode();
+
+  // Sync persisted goal → FocusMode context
+  useEffect(() => {
+    if (automationPrefs?.focusDailyGoalMinutes) {
+      setDailyGoalMinutes(automationPrefs.focusDailyGoalMinutes);
+    }
+  }, [automationPrefs?.focusDailyGoalMinutes, setDailyGoalMinutes]);
+
+  // Persist widget goal edits → Firestore
+  useEffect(() => {
+    if (
+      automationPrefs &&
+      dailyGoalMinutes !== automationPrefs.focusDailyGoalMinutes
+    ) {
+      save({ focusDailyGoalMinutes: dailyGoalMinutes });
+    }
+  }, [dailyGoalMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (planning.loading) {
     return (
@@ -72,10 +94,14 @@ export default function PlanningPage() {
         }
       />
 
-      {activeTab === 'hoje' && <TodayTab planning={planning} automationPrefs={automationPrefs} onChangeTab={setActiveTab} />}
+      {activeTab === 'hoje' && (
+        <PlanningErrorBoundary section="Aba Hoje">
+          <TodayTab planning={planning} automationPrefs={automationPrefs} onChangeTab={setActiveTab} agendaEvents={agendaEvents} />
+        </PlanningErrorBoundary>
+      )}
 
       <Suspense fallback={<TabFallback />}>
-        {activeTab === 'semana' && <WeekTab planning={planning} />}
+        {activeTab === 'semana' && <WeekTab planning={planning} agendaEvents={agendaEvents} />}
         {activeTab === 'mes' && <MonthTab planning={planning} />}
         {activeTab === 'pendencias' && <PendingTab planning={planning} />}
         {activeTab === 'checklist' && <ChecklistTab />}

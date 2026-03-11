@@ -19,6 +19,11 @@ import {
   computeRadar,
   computeFreeSlotSuggestions,
   computeSmartBanner,
+  computeOverdueFollowUps,
+  computeRelationshipAlerts,
+  computeOfferOpportunities,
+  computeWeeklyPace,
+  computeFocusSuggestion,
 } from '../domain/planning/planningIntelligence';
 import {
   scanForAlerts,
@@ -63,13 +68,39 @@ export function useTodayPlanning(
   const nextAction = useMemo(() => computeNextAction(tasks, blocks), [tasks, blocks]);
   const top5 = useMemo(() => computeTop5Priorities(tasks), [tasks]);
   const entityAlerts = useMemo(() => computeEntityAlerts(tasks), [tasks]);
-  const radar = useMemo(() => computeRadar(tasks, blocks), [tasks, blocks]);
-  const freeSlots = useMemo(() => computeFreeSlotSuggestions(tasks, blocks), [tasks, blocks]);
-  const smartBanner = useMemo(() => computeSmartBanner(tasks, blocks), [tasks, blocks]);
 
-  // Automation layer — structured alerts and opportunities (uses user preferences)
+  // Weekly pace (computed first — feeds into radar, freeSlots, smartBanner)
+  const weeklyPace = useMemo(() => computeWeeklyPace(tasks, blocks), [tasks, blocks]);
+
+  const radar = useMemo(() => computeRadar(tasks, blocks, weeklyPace), [tasks, blocks, weeklyPace]);
+  const freeSlots = useMemo(() => computeFreeSlotSuggestions(tasks, blocks, weeklyPace), [tasks, blocks, weeklyPace]);
+  const smartBanner = useMemo(() => computeSmartBanner(tasks, blocks, weeklyPace), [tasks, blocks, weeklyPace]);
+  const focusSuggestion = useMemo(() => computeFocusSuggestion(tasks, blocks, weeklyPace), [tasks, blocks, weeklyPace]);
+
+  // Automation layer — extract preferences first (used below)
   const alertThresholds = automationPrefs?.alertThresholds;
   const rulePreferences = automationPrefs?.rulePreferences;
+
+  // Overdue follow-up escalation
+  const overdueFollowUpAlerts = useMemo(
+    () => computeOverdueFollowUps(tasks),
+    [tasks],
+  );
+
+  // Relationship alerts (client no contact / prospect cooling)
+  const relationshipAlerts = useMemo(
+    () => computeRelationshipAlerts(tasks, {
+      clientNoContactDays: alertThresholds?.clientNoContactDays,
+      prospectCoolingDays: alertThresholds?.prospectIdleDays,
+    }),
+    [tasks, alertThresholds?.clientNoContactDays, alertThresholds?.prospectIdleDays],
+  );
+
+  // Offer opportunities
+  const offerOpportunities = useMemo(
+    () => computeOfferOpportunities(tasks),
+    [tasks],
+  );
   const automationAlerts = useMemo(
     () => scanForAlerts(tasks, today, alertThresholds, rulePreferences),
     [tasks, today, alertThresholds, rulePreferences],
@@ -130,6 +161,15 @@ export function useTodayPlanning(
     radar,
     freeSlots,
     smartBanner,
+    focusSuggestion,
+    // Weekly pace
+    weeklyPace,
+    // Overdue follow-up escalation
+    overdueFollowUpAlerts,
+    // Relationship alerts
+    relationshipAlerts,
+    // Offer opportunities
+    offerOpportunities,
     // Automation layer
     automationAlerts,
     automationOpportunities,

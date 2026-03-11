@@ -11,6 +11,7 @@ import type {
   AlertThresholds,
   SuggestionThresholds,
   AutomationRulePreferences,
+  WeeklyPaceGoals,
 } from './planningTypes';
 
 // ==========================================
@@ -180,10 +181,13 @@ export const DEFAULT_RULE_PREFERENCES: AutomationRulePreferences = {
   cross_opportunity: { enabled: false, priority: 'medium' },
 };
 
+export const DEFAULT_FOCUS_DAILY_GOAL_MINUTES = 120;
+
 export const DEFAULT_AUTOMATION_PREFERENCES: Omit<AutomationPreferences, 'id' | 'ownerUid' | 'createdAt' | 'updatedAt'> = {
   alertThresholds: DEFAULT_ALERT_THRESHOLDS,
   suggestionThresholds: DEFAULT_SUGGESTION_THRESHOLDS,
   rulePreferences: DEFAULT_RULE_PREFERENCES,
+  focusDailyGoalMinutes: DEFAULT_FOCUS_DAILY_GOAL_MINUTES,
 };
 
 /** Labels for automation rule triggers (pt-BR). */
@@ -208,4 +212,22 @@ export const ALERT_THRESHOLD_LABELS: Record<keyof AlertThresholds, { label: stri
 export const SUGGESTION_THRESHOLD_LABELS: Record<keyof SuggestionThresholds, { label: string; unit: string }> = {
   freeHoursForBlock: { label: 'Horas livres para sugerir bloco', unit: 'horas' },
   highPendingLimit: { label: 'Limite de pendências para alerta', unit: 'tarefas' },
+};
+
+// ==========================================
+// Weekly Pace Defaults
+// ==========================================
+
+export const DEFAULT_WEEKLY_PACE_GOALS: WeeklyPaceGoals = {
+  meetings: 5,
+  followUps: 10,
+  prospectingBlocks: 3,
+  newContacts: 5,
+};
+
+export const WEEKLY_PACE_LABELS: Record<keyof WeeklyPaceGoals, string> = {
+  meetings: 'Reuniões',
+  followUps: 'Follow-ups',
+  prospectingBlocks: 'Blocos de Prospecção',
+  newContacts: 'Novos Contatos',
 };

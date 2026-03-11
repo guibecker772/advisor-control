@@ -2,6 +2,7 @@ import {
   BarChart3,
   CheckCircle2,
   Clock,
+  Crosshair,
   Phone,
   Users,
   Target,
@@ -15,7 +16,7 @@ import {
 } from 'lucide-react';
 import { BaseCard, SectionHeader, Badge, SegmentedControl } from '../../../components/ui';
 import { useReport } from '../../../hooks/useReport';
-import type { ReportMetrics, TaskBreakdown, BlockBreakdown } from '../../../domain/planning/reportMetrics';
+import type { ReportMetrics, TaskBreakdown, BlockBreakdown, FocusCategoryBreakdown, FocusDailyBreakdown } from '../../../domain/planning/reportMetrics';
 import { reportToText } from '../../../domain/planning/reportMetrics';
 import { formatDuration } from '../../../domain/planning/planningUtils';
 import type { usePlanning } from '../../../hooks/usePlanning';
@@ -395,6 +396,115 @@ export default function ReportTab({ planning }: ReportTabProps) {
           <div className="mt-3">
             <BlockBreakdownList items={metrics.blockBreakdown} totalMinutes={metrics.totalBlockMinutes} />
           </div>
+        </BaseCard>
+      )}
+
+      {/* Modo Foco */}
+      {metrics.focus && metrics.focus.totalSessions > 0 && (
+        <BaseCard>
+          <SectionHeader
+            title="Modo Foco"
+            icon={Crosshair}
+            subtitle={`${metrics.focus.totalSessions} ${metrics.focus.totalSessions === 1 ? 'sessão' : 'sessões'} · ${formatDuration(metrics.focus.totalMinutes)}`}
+          />
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <MetricCard
+              icon={Crosshair}
+              label="Sessões"
+              value={`${metrics.focus.completedSessions}/${metrics.focus.totalSessions}`}
+              color="gold"
+            />
+            <MetricCard
+              icon={CheckCircle2}
+              label="Taxa de Conclusão"
+              value={`${metrics.focus.completionRate}%`}
+              color={metrics.focus.completionRate >= 80 ? 'green' : metrics.focus.completionRate >= 50 ? 'gold' : 'red'}
+            />
+            <MetricCard
+              icon={Clock}
+              label="Tempo Focado"
+              value={formatDuration(metrics.focus.totalMinutes)}
+              color="blue"
+            />
+          </div>
+          {metrics.focus.categoryBreakdown.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {metrics.focus.categoryBreakdown.map((cat) => {
+                const pct = metrics.focus!.totalMinutes > 0
+                  ? Math.round((cat.totalMinutes / metrics.focus!.totalMinutes) * 100)
+                  : 0;
+                return (
+                  <div key={cat.category} className="flex items-center gap-3">
+                    <span className="w-28 flex-shrink-0 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+                      {cat.category}
+                    </span>
+                    <div className="flex-1">
+                      <div className="h-2 rounded-full" style={{ background: 'var(--color-border)' }}>
+                        <div
+                          className="h-2 rounded-full"
+                          style={{ width: `${pct}%`, background: 'var(--color-gold)' }}
+                        />
+                      </div>
+                    </div>
+                    <span className="w-20 text-right text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      {cat.sessionCount}x · {formatDuration(cat.totalMinutes)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Weekly / daily focus consistency */}
+          {metrics.focus.dailyBreakdown.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+                Consistência diária
+              </p>
+              <div className="flex items-end gap-1" style={{ height: 80 }}>
+                {(() => {
+                  const maxMin = Math.max(...metrics.focus!.dailyBreakdown.map(d => d.totalMinutes), 1);
+                  return metrics.focus!.dailyBreakdown.map(day => {
+                    const pct = (day.totalMinutes / maxMin) * 100;
+                    const isToday = day.date === new Date().toISOString().slice(0, 10);
+                    return (
+                      <div
+                        key={day.date}
+                        className="flex-1 flex flex-col items-center justify-end gap-0.5"
+                        style={{ height: '100%' }}
+                        title={`${day.dayLabel}: ${day.totalMinutes}min · ${day.sessionCount} ${day.sessionCount === 1 ? 'sessão' : 'sessões'}`}
+                      >
+                        {day.totalMinutes > 0 && (
+                          <span className="text-[9px]" style={{ color: 'var(--color-text-muted)' }}>
+                            {day.totalMinutes}
+                          </span>
+                        )}
+                        <div
+                          className="w-full rounded-sm transition-all"
+                          style={{
+                            height: day.totalMinutes > 0 ? `${Math.max(pct, 8)}%` : '3px',
+                            background: day.totalMinutes > 0
+                              ? isToday ? 'var(--color-accent)' : 'var(--color-gold)'
+                              : 'var(--color-border)',
+                            opacity: day.totalMinutes > 0 ? 1 : 0.4,
+                          }}
+                        />
+                        <span
+                          className="text-[10px]"
+                          style={{
+                            color: isToday ? 'var(--color-accent)' : 'var(--color-text-muted)',
+                            fontWeight: isToday ? 600 : 400,
+                          }}
+                        >
+                          {day.dayLabel}
+                        </span>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
         </BaseCard>
       )}
     </div>

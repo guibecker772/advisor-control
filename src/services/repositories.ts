@@ -521,10 +521,11 @@ export const eventReminderRepository = createRepository<EventReminder>('event_re
 export const clientProductRepository = createRepository<ClientProduct>('client_products');
 
 // Planning module
-import type { PlanningTask, PlanningBlock, DailyReview, WeeklyChecklistState, MonthlyChecklistState, AutomationPreferences } from '../domain/planning/planningTypes';
+import type { PlanningTask, PlanningBlock, DailyReview, WeeklyChecklistState, MonthlyChecklistState, AutomationPreferences, FocusSessionRecord } from '../domain/planning/planningTypes';
 export const planningTaskRepository = createRepository<PlanningTask>('planning_tasks');
 export const planningBlockRepository = createRepository<PlanningBlock>('planning_blocks');
 export const dailyReviewRepository = createRepository<DailyReview>('daily_reviews');
 export const weeklyChecklistRepository = createRepository<WeeklyChecklistState>('weekly_checklists');
 export const monthlyChecklistRepository = createRepository<MonthlyChecklistState>('monthly_checklists');
 export const automationPreferencesRepository = createRepository<AutomationPreferences>('automation_preferences');
+export const focusSessionRepository = createRepository<FocusSessionRecord>('focus_sessions');

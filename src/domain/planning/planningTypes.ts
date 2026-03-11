@@ -181,6 +181,8 @@ export interface AutomationPreferences {
   alertThresholds: AlertThresholds;
   suggestionThresholds: SuggestionThresholds;
   rulePreferences: AutomationRulePreferences;
+  /** Daily focus goal in minutes. Default: 120. */
+  focusDailyGoalMinutes: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -190,6 +192,55 @@ export type PlanningTaskInput = Omit<PlanningTask, 'id' | 'ownerUid' | 'createdA
 export type PlanningBlockInput = Omit<PlanningBlock, 'id' | 'ownerUid' | 'createdAt' | 'updatedAt'>;
 
 export type DailyReviewInput = Omit<DailyReview, 'id' | 'ownerUid' | 'createdAt' | 'updatedAt'>;
+
+// ==========================================
+// Weekly Pace (goal-driven execution)
+// ==========================================
+
+/** Configurable weekly operational target counts. */
+export interface WeeklyPaceGoals {
+  /** Target number of meetings per week. Default: 5 */
+  meetings: number;
+  /** Target number of follow-ups completed per week. Default: 10 */
+  followUps: number;
+  /** Target number of prospecting blocks per week. Default: 3 */
+  prospectingBlocks: number;
+  /** Target number of new contacts (calls + prospecting tasks) per week. Default: 5 */
+  newContacts: number;
+}
+
+/** Progress status for a single metric. */
+export interface WeeklyPaceMetric {
+  label: string;
+  actual: number;
+  target: number;
+  /** 0–100 percentage */
+  pct: number;
+  /** How many behind target (0 if on pace or ahead). */
+  behindBy: number;
+  status: 'on_track' | 'behind' | 'critical';
+}
+
+/** Overall weekly pace assessment. */
+export interface WeeklyPaceStatus {
+  weekLabel: string;
+  /** Day-of-week index (1=Mon … 5=Fri, 6=Sat, 7=Sun). */
+  dayOfWeek: number;
+  /** Expected progress % based on day of week (e.g. Wed = 60%). */
+  expectedPct: number;
+  metrics: {
+    meetings: WeeklyPaceMetric;
+    followUps: WeeklyPaceMetric;
+    prospectingBlocks: WeeklyPaceMetric;
+    newContacts: WeeklyPaceMetric;
+  };
+  /** Number of metrics behind pace. */
+  behindCount: number;
+  /** Overall assessment. */
+  overall: 'on_track' | 'behind' | 'critical';
+  /** Actionable summary line. */
+  summary: string;
+}
 
 /** Checklist summary data for cross-component usage. */
 export interface ChecklistSummary {
@@ -201,4 +252,45 @@ export interface ChecklistSummary {
   monthlyTotal: number;
   monthlyChecked: number;
   monthlyPending: ChecklistItem[];
+}
+
+// ==========================================
+// Focus Session History
+// ==========================================
+
+/** How a focus session ended. */
+export type FocusOutcome = 'completed' | 'interrupted';
+
+/** A single completed focus session record (persisted). */
+export interface FocusSessionRecord {
+  id?: string;
+  ownerUid?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  /** ISO date string (YYYY-MM-DD). */
+  date: string;
+  /** What the user was focusing on. */
+  label: string;
+  /** Source type that triggered the session. */
+  sourceType: 'free' | 'task' | 'block';
+  /** ID of linked task or block. */
+  sourceId?: string;
+  /** Category context (e.g. "Prospecção", "Follow-up"). */
+  sourceContext?: string;
+  /** How the session ended. */
+  outcome: FocusOutcome;
+  /** Number of full focus cycles completed. */
+  cycleCount: number;
+  /** Configured focus duration per cycle (minutes). */
+  durationMinutes: number;
+  /** Total minutes effectively focused (sum of all completed cycles + partial). */
+  totalFocusedMinutes: number;
+  /** ISO datetime when session started. */
+  startedAt: string;
+  /** ISO datetime when session ended. */
+  endedAt: string;
+  /** Optional user note on the session. */
+  note?: string;
+  /** Whether the linked task was marked as completed after the session. */
+  taskCompleted?: boolean;
 }

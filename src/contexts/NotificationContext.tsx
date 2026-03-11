@@ -1,9 +1,27 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { notificationRepository, calendarEventRepository, eventReminderRepository } from '../services/repositories';
+import {
+  notificationRepository,
+  calendarEventRepository,
+  eventReminderRepository,
+  planningTaskRepository,
+  planningBlockRepository,
+  automationPreferencesRepository,
+} from '../services/repositories';
 import type { Notification } from '../domain/types/calendar';
 import { useAuth } from './AuthContext';
 import toast from 'react-hot-toast';
 import { addMinutes, isBefore, isAfter, parseISO } from 'date-fns';
+import {
+  computeOverdueFollowUps,
+  computeRelationshipAlerts,
+  computeFreeSlotSuggestions,
+  computeSmartBanner,
+  computeWeeklyPace,
+  detectPostMeetingPrompts,
+} from '../domain/planning/planningIntelligence';
+import { scanForAlerts } from '../domain/planning/planningIntegration';
+import { generatePlanningNotifications } from '../domain/planning/planningNotifications';
+import { todayString, filterTasksForDate } from '../domain/planning/planningUtils';
 
 interface NotificationContextData {
   notifications: Notification[];
@@ -49,11 +67,22 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
 
     try {
       const all = await notificationRepository.getAll(ownerUid);
-      // Ordenar por data de criação (mais recentes primeiro)
+      // Smart sort: priority-weighted with unread bonus and recency
+      const PRIORITY_W: Record<string, number> = { critical: 40, high: 30, normal: 10, low: 0 };
+      const CATEGORY_W: Record<string, number> = { urgente: 50, hoje: 30, sugestoes: 10, planejamento: 5, agenda: 0 };
+      const now = Date.now();
       const sorted = all.sort((a, b) => {
-        const dateA = new Date(a.createdAt || 0);
-        const dateB = new Date(b.createdAt || 0);
-        return dateB.getTime() - dateA.getTime();
+        const scoreA =
+          (PRIORITY_W[a.priority ?? 'normal'] ?? 10) +
+          (CATEGORY_W[a.category ?? 'agenda'] ?? 0) +
+          (a.read ? 0 : 20) +
+          Math.max(0, 10 - (now - new Date(a.createdAt || 0).getTime()) / 3_600_000);
+        const scoreB =
+          (PRIORITY_W[b.priority ?? 'normal'] ?? 10) +
+          (CATEGORY_W[b.category ?? 'agenda'] ?? 0) +
+          (b.read ? 0 : 20) +
+          Math.max(0, 10 - (now - new Date(b.createdAt || 0).getTime()) / 3_600_000);
+        return scoreB - scoreA;
       });
       setNotifications(sorted);
     } catch (error) {
@@ -140,11 +169,16 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
           
           await notificationRepository.create({
             type: notificationType,
+            category: 'agenda',
+            priority: reminder.minutesBefore === 30 ? 'high' : 'normal',
             eventId: event.id,
             eventTitle: event.title,
             eventStart: event.start,
             title: `Lembrete: ${event.title}`,
             message: `Sua reunião começa em ${timeLabel}`,
+            actionLabel: 'Ver agenda',
+            actionRoute: '/agendas',
+            actions: [{ label: 'Ver agenda', route: '/agendas', variant: 'primary' }],
             read: false,
           }, ownerUid);
           
@@ -168,6 +202,84 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     }
   }, [authLoading, ownerUid, loadNotifications]);
 
+  // Gerar notificações do Planejamento (dedup por dedupKey)
+  const checkAndCreatePlanningNotifications = useCallback(async () => {
+    if (authLoading) return;
+    if (!ownerUid) return;
+
+    try {
+      const [tasks, blocks, existingNotifs, prefsArr, calendarEvents] = await Promise.all([
+        planningTaskRepository.getAll(ownerUid),
+        planningBlockRepository.getAll(ownerUid),
+        notificationRepository.getAll(ownerUid),
+        automationPreferencesRepository.getAll(ownerUid),
+        calendarEventRepository.getAll(ownerUid),
+      ]);
+
+      const automationPrefs = prefsArr.length > 0 ? prefsArr[0] : undefined;
+      const today = todayString();
+      const todayTasks = filterTasksForDate(tasks, today);
+
+      // Compute intelligence outputs
+      const weeklyPace = computeWeeklyPace(tasks, blocks);
+      const overdueFollowUpAlerts = computeOverdueFollowUps(tasks);
+      const relationshipAlerts = computeRelationshipAlerts(tasks, {
+        clientNoContactDays: automationPrefs?.alertThresholds?.clientNoContactDays,
+        prospectCoolingDays: automationPrefs?.alertThresholds?.prospectIdleDays,
+      });
+      const automationAlerts = scanForAlerts(
+        tasks, today,
+        automationPrefs?.alertThresholds,
+        automationPrefs?.rulePreferences,
+      );
+      const freeSlots = computeFreeSlotSuggestions(tasks, blocks, weeklyPace);
+      const smartBanner = computeSmartBanner(tasks, blocks, weeklyPace);
+
+      // Generate candidates
+      const postMeetingPrompts = detectPostMeetingPrompts(calendarEvents, tasks, today);
+
+      const candidates = generatePlanningNotifications({
+        tasks,
+        overdueFollowUpAlerts,
+        relationshipAlerts,
+        automationAlerts,
+        freeSlots,
+        smartBanner,
+        todayTaskCount: todayTasks.filter(t => t.status !== 'completed' && t.status !== 'archived').length,
+        weeklyPace,
+        calendarEvents,
+        postMeetingPrompts,
+      });
+
+      if (candidates.length === 0) return;
+
+      // Dedup: check existing notifications by dedupKey
+      const existingDedupKeys = new Set(
+        existingNotifs
+          .filter(n => n.dedupKey)
+          .map(n => n.dedupKey),
+      );
+
+      const newCandidates = candidates.filter(
+        c => c.dedupKey && !existingDedupKeys.has(c.dedupKey),
+      );
+
+      // Persist new notifications
+      for (const candidate of newCandidates) {
+        await notificationRepository.create({
+          ...candidate,
+          read: false,
+        }, ownerUid);
+      }
+
+      if (newCandidates.length > 0) {
+        await loadNotifications();
+      }
+    } catch (error) {
+      console.error('Erro ao gerar notificações do Planejamento:', error);
+    }
+  }, [authLoading, ownerUid, loadNotifications]);
+
   // Inicialização e polling
   useEffect(() => {
     if (authLoading) {
@@ -184,24 +296,37 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
     loadNotifications();
     checkAndCreateReminders();
     
-    // Verificar a cada 1 minuto
+    // Verificar a cada 1 minuto (calendar) / 5 min (planning)
+    let planningTickCount = 0;
     checkIntervalRef.current = setInterval(() => {
       checkAndCreateReminders();
       triggerDueReminders();
+      // Planning scan a cada 5 ciclos (~5 min) para não sobrecarregar
+      planningTickCount++;
+      if (planningTickCount >= 5) {
+        planningTickCount = 0;
+        checkAndCreatePlanningNotifications();
+      }
     }, 60000); // 1 minuto
     
     // Verificação inicial após 5 segundos
     const initialCheck = setTimeout(() => {
       triggerDueReminders();
     }, 5000);
+
+    // Planning: primeira verificação após 10 segundos
+    const initialPlanningCheck = setTimeout(() => {
+      checkAndCreatePlanningNotifications();
+    }, 10000);
     
     return () => {
       if (checkIntervalRef.current) {
         clearInterval(checkIntervalRef.current);
       }
       clearTimeout(initialCheck);
+      clearTimeout(initialPlanningCheck);
     };
-  }, [authLoading, ownerUid, loadNotifications, checkAndCreateReminders, triggerDueReminders]);
+  }, [authLoading, ownerUid, loadNotifications, checkAndCreateReminders, triggerDueReminders, checkAndCreatePlanningNotifications]);
 
   // Marcar como lida
   const markAsRead = useCallback(async (id: string) => {

@@ -96,20 +96,74 @@ export type CalendarAccount = z.output<typeof calendarAccountSchema>;
 export type CalendarAccountInput = z.input<typeof calendarAccountSchema>;
 
 // ============== NOTIFICAÇÃO IN-APP ==============
+
+/** All supported notification type keys. */
+export const NOTIFICATION_TYPES = [
+  // Calendar
+  'reminder_60min',
+  'reminder_30min',
+  'event_created',
+  'event_updated',
+  'sync_error',
+  // Planning
+  'planning_overdue_followup',
+  'planning_overdue_task',
+  'planning_idle_prospect',
+  'planning_client_no_contact',
+  'planning_overflow_risk',
+  'planning_free_slot',
+  'planning_daily_summary',
+  'planning_meeting_prep',
+  'planning_pace_behind',
+] as const;
+
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+/** Visual categories for grouping notifications in the panel. */
+export type NotificationCategory = 'urgente' | 'hoje' | 'sugestoes' | 'planejamento' | 'agenda';
+
+/** Notification priority for ordering and visual emphasis. */
+export type NotificationPriority = 'critical' | 'high' | 'normal' | 'low';
+
 export const notificationSchema = z.object({
   id: z.string().optional(),
   
   // Tipo de notificação
-  type: z.enum(['reminder_60min', 'reminder_30min', 'event_created', 'event_updated', 'sync_error']),
+  type: z.enum(NOTIFICATION_TYPES),
   
-  // Referência ao evento
+  // Categoria visual (agrupamento no painel)
+  category: z.enum(['urgente', 'hoje', 'sugestoes', 'planejamento', 'agenda']).optional().default('agenda'),
+  
+  // Prioridade
+  priority: z.enum(['critical', 'high', 'normal', 'low']).optional().default('normal'),
+  
+  // Referência ao evento (calendar)
   eventId: z.string().optional(),
   eventTitle: z.string().optional(),
   eventStart: z.string().optional(),
   
+  // Referência a entidade do Planning
+  entityType: z.string().optional(),
+  entityId: z.string().optional(),
+  entityName: z.string().optional(),
+  
   // Conteúdo
   title: z.string().min(1),
   message: z.string().optional().default(''),
+  
+  // Ação rápida (principal)
+  actionLabel: z.string().optional(),
+  actionRoute: z.string().optional(),
+  
+  // Ações rápidas adicionais [{label, route, variant?}]
+  actions: z.array(z.object({
+    label: z.string(),
+    route: z.string(),
+    variant: z.enum(['primary', 'secondary', 'ghost']).optional().default('secondary'),
+  })).optional().default([]),
+  
+  // Chave de dedup (impede recriação da mesma notificação)
+  dedupKey: z.string().optional(),
   
   // Status
   read: z.boolean().default(false),

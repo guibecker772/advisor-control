@@ -12,8 +12,13 @@ import {
   ListTodo,
   ExternalLink,
   GripVertical,
+  Calendar,
+  CalendarClock,
+  Inbox,
+  Archive,
+  ArrowRight,
 } from 'lucide-react';
-import { addDays } from 'date-fns';
+import { addDays, parseISO, format as fnsFormat } from 'date-fns';
 import {
   formatWeekdayShort,
   formatDateDayMonth,
@@ -26,6 +31,8 @@ import {
   PRIORITY_BADGE_VARIANT,
 } from '../../../domain/planning/planningConstants';
 import type { PlanningTask } from '../../../domain/planning/planningTypes';
+import type { CalendarEvent } from '../../../domain/types/calendar';
+import { getEffectiveMeetingType, MEETING_TYPE_COLORS, MEETING_TYPE_LABELS } from '../../../domain/types/calendar';
 import { getEntityRoute } from '../../../domain/planning/planningIntegration';
 import TaskDrawer from '../../../components/planning/TaskDrawer';
 import TaskFormModal from '../../../components/planning/TaskFormModal';
@@ -34,6 +41,7 @@ type PlanningReturn = ReturnType<typeof usePlanning>;
 
 interface WeekTabProps {
   planning: PlanningReturn;
+  agendaEvents?: CalendarEvent[];
 }
 
 /** Identifies what is being dragged. */
@@ -69,7 +77,7 @@ function GoalBar({ label, done, target }: { label: string; done: number; target:
   );
 }
 
-export default function WeekTab({ planning }: WeekTabProps) {
+export default function WeekTab({ planning, agendaEvents = [] }: WeekTabProps) {
   const navigate = useNavigate();
   const [weekOffset, setWeekOffset] = useState(0);
   const referenceDate = useMemo(() => addDays(new Date(), weekOffset * 7), [weekOffset]);
@@ -80,7 +88,13 @@ export default function WeekTab({ planning }: WeekTabProps) {
     weekPriorities,
     overdueForWeek,
     weekGoals,
+    undatedSummary,
   } = useWeeklyPlanning(planning.tasks, planning.blocks, referenceDate);
+
+  // Enhanced visibility on Sunday (7) / Monday (1)
+  const jsDay = new Date().getDay();
+  const dayOfWeek = jsDay === 0 ? 7 : jsDay;
+  const isCleanupDay = dayOfWeek === 7 || dayOfWeek === 1;
 
   const [selectedTask, setSelectedTask] = useState<PlanningTask | null>(null);
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -89,6 +103,20 @@ export default function WeekTab({ planning }: WeekTabProps) {
   // Drag-and-drop state
   const [dragItem, setDragItem] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  // Group agenda events by date string for the week
+  const agendaByDate = useMemo(() => {
+    const map = new Map<string, CalendarEvent[]>();
+    for (const ev of agendaEvents) {
+      try {
+        const dateStr = fnsFormat(parseISO(ev.start), 'yyyy-MM-dd');
+        const arr = map.get(dateStr) ?? [];
+        arr.push(ev);
+        map.set(dateStr, arr);
+      } catch { /* skip invalid */ }
+    }
+    return map;
+  }, [agendaEvents]);
 
   const weekKey = getWeekKey(referenceDate);
 
@@ -282,7 +310,7 @@ export default function WeekTab({ planning }: WeekTabProps) {
 
                 {/* Day items */}
                 <div className="flex-1 p-2 space-y-1 overflow-y-auto">
-                  {day.tasks.length === 0 && day.blocks.length === 0 && (
+                  {day.tasks.length === 0 && day.blocks.length === 0 && !(agendaByDate.get(day.dateString)?.length) && (
                     <div className="text-center py-4">
                       <p className="text-xs italic mb-2" style={{ color: 'var(--color-text-muted)' }}>
                         Dia livre
@@ -392,6 +420,43 @@ export default function WeekTab({ planning }: WeekTabProps) {
                       </div>
                     </div>
                   ))}
+                  {(agendaByDate.get(day.dateString) ?? []).map((agEvt) => {
+                    const mType = getEffectiveMeetingType(agEvt);
+                    const mColor = MEETING_TYPE_COLORS[mType];
+                    const startD = parseISO(agEvt.start);
+                    const endD = agEvt.end ? parseISO(agEvt.end) : null;
+                    return (
+                      <div
+                        key={`ag-${agEvt.id}`}
+                        className="rounded-md p-2"
+                        style={{
+                          backgroundColor: `${mColor}10`,
+                          borderLeft: `3px solid ${mColor}`,
+                        }}
+                      >
+                        <div className="flex items-start gap-1">
+                          <Calendar
+                            className="w-3 h-3 mt-0.5 flex-shrink-0"
+                            style={{ color: mColor }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                              {agEvt.title}
+                            </p>
+                            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                              {fnsFormat(startD, 'HH:mm')}{endD ? ` - ${fnsFormat(endD, 'HH:mm')}` : ''}
+                            </p>
+                            <span
+                              className="text-[10px] px-1 py-0.5 rounded-full font-medium"
+                              style={{ backgroundColor: `${mColor}20`, color: mColor }}
+                            >
+                              {MEETING_TYPE_LABELS[mType]}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -504,10 +569,14 @@ export default function WeekTab({ planning }: WeekTabProps) {
             </SectionCard>
           )}
 
-          {/* Unscheduled tasks */}
+          {/* Undated tasks — enriched section */}
           <SectionCard
-            title="Tarefas sem Data"
-            subtitle={`${unscheduledTasks.length} item(ns)`}
+            title="Pendências sem Data"
+            subtitle={
+              undatedSummary.total === 0
+                ? 'Tudo organizado'
+                : `${undatedSummary.total} item(ns)${undatedSummary.highImpact > 0 ? ` · ${undatedSummary.highImpact} de alto impacto` : ''}`
+            }
             action={
               <Button
                 variant="ghost"
@@ -518,7 +587,7 @@ export default function WeekTab({ planning }: WeekTabProps) {
               </Button>
             }
           >
-            {unscheduledTasks.length === 0 ? (
+            {undatedSummary.total === 0 ? (
               <div className="text-center py-6">
                 <CalendarDays className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--color-success)' }} />
                 <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
@@ -529,38 +598,131 @@ export default function WeekTab({ planning }: WeekTabProps) {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {unscheduledTasks.slice(0, 8).map((task) => (
-                  <button
-                    key={task.id}
-                    draggable
-                    onDragStart={(e) =>
-                      handleDragStart(e, { type: 'task', id: task.id!, sourceDate: '' })
-                    }
-                    onDragEnd={handleDragEnd}
-                    onClick={() => setSelectedTask(task)}
-                    className="w-full text-left rounded-lg p-2 transition-colors cursor-grab active:cursor-grabbing group"
+              <div className="space-y-3">
+                {/* Cleanup alert — boosted on Sunday/Monday */}
+                {(isCleanupDay || undatedSummary.aging > 0) && (
+                  <div
+                    className="rounded-lg p-3 flex items-start gap-2"
                     style={{
-                      backgroundColor: 'var(--color-surface-2)',
-                      border: '1px solid var(--color-border-subtle)',
+                      backgroundColor: isCleanupDay ? 'var(--color-warning-bg)' : 'var(--color-surface-2)',
+                      border: isCleanupDay ? '1px solid var(--color-warning)' : '1px solid var(--color-border-subtle)',
                     }}
                   >
-                    <div className="flex items-start gap-1">
-                      <GripVertical
-                        className="w-3 h-3 mt-0.5 flex-shrink-0 opacity-0 group-hover:opacity-50 transition-opacity"
-                        style={{ color: 'var(--color-text-muted)' }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
-                          {task.title}
-                        </p>
-                        <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                          {TASK_TYPE_LABELS[task.type]}
-                        </p>
-                      </div>
+                    <Inbox className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: isCleanupDay ? 'var(--color-warning)' : 'var(--color-text-muted)' }} />
+                    <div>
+                      <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                        {isCleanupDay ? 'Hora de organizar!' : 'Tarefas acumulando'}
+                      </p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                        {undatedSummary.aging > 0
+                          ? `${undatedSummary.aging} tarefa(s) criada(s) há 7+ dias sem data.`
+                          : `${undatedSummary.total} pendência(s) sem data. Distribua na semana.`}
+                      </p>
                     </div>
-                  </button>
+                  </div>
+                )}
+
+                {/* Classified task list */}
+                {undatedSummary.items.slice(0, 10).map(({ task, ageDays, impact, suggestion }) => (
+                  <div
+                    key={task.id}
+                    className="rounded-lg overflow-hidden transition-all"
+                    style={{
+                      backgroundColor: impact === 'high' ? 'var(--color-gold-bg)' : 'var(--color-surface-2)',
+                      border: `1px solid ${
+                        impact === 'high' ? 'var(--color-gold)'
+                          : impact === 'medium' ? 'var(--color-info)'
+                          : 'var(--color-border-subtle)'
+                      }`,
+                    }}
+                  >
+                    <button
+                      draggable
+                      onDragStart={(e) =>
+                        handleDragStart(e, { type: 'task', id: task.id!, sourceDate: '' })
+                      }
+                      onDragEnd={handleDragEnd}
+                      onClick={() => setSelectedTask(task)}
+                      className="w-full text-left p-2.5 cursor-grab active:cursor-grabbing group"
+                    >
+                      <div className="flex items-start gap-1.5">
+                        <GripVertical
+                          className="w-3 h-3 mt-0.5 flex-shrink-0 opacity-0 group-hover:opacity-50 transition-opacity"
+                          style={{ color: 'var(--color-text-muted)' }}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            {impact === 'high' && (
+                              <AlertTriangle className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--color-gold)' }} />
+                            )}
+                            <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                              {task.title}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                              {TASK_TYPE_LABELS[task.type]}
+                            </span>
+                            {ageDays >= 7 && (
+                              <span
+                                className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                style={{ backgroundColor: 'var(--color-warning-bg)', color: 'var(--color-warning)' }}
+                              >
+                                {ageDays}d sem data
+                              </span>
+                            )}
+                            {task.linkedEntityName && (
+                              <span className="text-[10px] truncate" style={{ color: 'var(--color-gold)' }}>
+                                {task.linkedEntityName}
+                              </span>
+                            )}
+                            <Badge variant={PRIORITY_BADGE_VARIANT[task.priority]} className="text-[10px] !py-0 !px-1">
+                              {PRIORITY_LABELS[task.priority]}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                    {/* Quick actions row */}
+                    <div
+                      className="flex items-center gap-1 px-2.5 pb-2 pt-0"
+                    >
+                      <button
+                        className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md transition-colors hover:bg-[var(--color-surface-hover)]"
+                        style={{ color: 'var(--color-gold)' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingTask(task);
+                          setShowTaskForm(true);
+                        }}
+                        title="Definir data e encaixar na semana"
+                      >
+                        <CalendarClock className="w-3 h-3" />
+                        {suggestion}
+                      </button>
+                      <button
+                        className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md transition-colors hover:bg-[var(--color-surface-hover)]"
+                        style={{ color: 'var(--color-text-muted)' }}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (task.id) {
+                            await planning.archiveTask(task.id);
+                          }
+                        }}
+                        title="Arquivar tarefa"
+                      >
+                        <Archive className="w-3 h-3" />
+                        Arquivar
+                      </button>
+                    </div>
+                  </div>
                 ))}
+
+                {undatedSummary.total > 10 && (
+                  <p className="text-xs text-center" style={{ color: 'var(--color-text-muted)' }}>
+                    +{undatedSummary.total - 10} tarefas sem data
+                  </p>
+                )}
               </div>
             )}
           </SectionCard>

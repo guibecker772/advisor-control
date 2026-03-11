@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Modal, Button, Textarea, Badge } from '../ui';
 import { useAuth } from '../../contexts/AuthContext';
 import * as planningService from '../../services/planningService';
@@ -7,6 +7,8 @@ import {
   AlertTriangle,
   ArrowRight,
   Check,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Star,
   Target,
@@ -34,6 +36,7 @@ interface DailyReviewModalProps {
   };
   date: string;
   overflowTasks?: PlanningTask[];
+  tomorrowTasks?: PlanningTask[];
   tomorrowPriority1?: PlanningTask | null;
   tomorrowMainPending?: PlanningTask | null;
   tomorrowTasksCount?: number;
@@ -48,6 +51,7 @@ export default function DailyReviewModal({
   stats,
   date,
   overflowTasks = [],
+  tomorrowTasks = [],
   tomorrowPriority1 = null,
   tomorrowMainPending = null,
   tomorrowTasksCount = 0,
@@ -59,7 +63,56 @@ export default function DailyReviewModal({
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const rescheduledCount = overflowTasks.length;
+  // Batch overflow selection — all pre-selected by default
+  const [selectedOverflow, setSelectedOverflow] = useState<Set<string>>(
+    () => new Set(overflowTasks.map((t) => t.id!)),
+  );
+
+  // Priority #1 picker
+  const [pickedPriority1Id, setPickedPriority1Id] = useState<string | null>(
+    () => tomorrowPriority1?.id ?? null,
+  );
+  const [showPriorityPicker, setShowPriorityPicker] = useState(false);
+
+  const toggleOverflow = useCallback((id: string) => {
+    setSelectedOverflow((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAllOverflow = useCallback(() => {
+    setSelectedOverflow((prev) =>
+      prev.size === overflowTasks.length
+        ? new Set<string>()
+        : new Set(overflowTasks.map((t) => t.id!)),
+    );
+  }, [overflowTasks]);
+
+  // Candidates for priority #1: tomorrow tasks + selected overflow
+  const priorityCandidates = useMemo(() => {
+    const selectedOverflowTasks = overflowTasks.filter(
+      (t) => t.id && selectedOverflow.has(t.id),
+    );
+    const ids = new Set<string>();
+    const result: PlanningTask[] = [];
+    for (const t of [...tomorrowTasks, ...selectedOverflowTasks]) {
+      if (t.id && !ids.has(t.id)) {
+        ids.add(t.id);
+        result.push(t);
+      }
+    }
+    return result;
+  }, [tomorrowTasks, overflowTasks, selectedOverflow]);
+
+  const pickedPriority1 = useMemo(
+    () => priorityCandidates.find((t) => t.id === pickedPriority1Id) ?? tomorrowPriority1,
+    [priorityCandidates, pickedPriority1Id, tomorrowPriority1],
+  );
+
+  const rescheduledCount = selectedOverflow.size;
   const totalAll = stats.completedCount + stats.pendingCount;
   const completionRate = totalAll > 0 ? Math.round((stats.completedCount / totalAll) * 100) : 0;
 
@@ -67,6 +120,13 @@ export default function DailyReviewModal({
     if (!user?.uid) return;
     setSaving(true);
     try {
+      // Batch-postpone selected overflow tasks
+      if (onPostponeTask) {
+        for (const id of selectedOverflow) {
+          await onPostponeTask(id);
+        }
+      }
+
       await planningService.saveDailyReview(
         {
           date,
@@ -207,7 +267,7 @@ export default function DailyReviewModal({
           </div>
         </div>
 
-        {/* Transbordo section */}
+        {/* Transbordo — batch selection */}
         {overflowTasks.length > 0 && (
           <div
             className="rounded-xl p-4"
@@ -216,50 +276,63 @@ export default function DailyReviewModal({
               border: '1px solid var(--color-border-subtle)',
             }}
           >
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="w-4 h-4" style={{ color: 'var(--color-warning)' }} />
-              <p className="text-sm font-semibold" style={{ color: 'var(--color-warning)' }}>
-                Transbordo — {overflowTasks.length} tarefa(s) não concluída(s)
-              </p>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" style={{ color: 'var(--color-warning)' }} />
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-warning)' }}>
+                  Transbordo — {overflowTasks.length} tarefa(s)
+                </p>
+              </div>
+              <button
+                onClick={toggleAllOverflow}
+                className="text-xs px-2 py-1 rounded-md transition-colors hover:bg-[var(--color-info-bg)]"
+                style={{ color: 'var(--color-info)' }}
+              >
+                {selectedOverflow.size === overflowTasks.length ? 'Desmarcar todas' : 'Selecionar todas'}
+              </button>
             </div>
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {overflowTasks.slice(0, 5).map((task) => (
-                <div
-                  key={task.id}
-                  className="flex items-center justify-between gap-2 rounded-lg p-2"
-                  style={{ backgroundColor: 'var(--color-surface-2)' }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
+            <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
+              Selecione as tarefas que deseja adiar para amanhã:
+            </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {overflowTasks.map((task) => {
+                const isSelected = task.id ? selectedOverflow.has(task.id) : false;
+                return (
+                  <button
+                    key={task.id}
+                    onClick={() => task.id && toggleOverflow(task.id)}
+                    className="w-full flex items-center gap-2 rounded-lg p-2 text-left transition-colors"
+                    style={{
+                      backgroundColor: isSelected
+                        ? 'var(--color-info-bg)'
+                        : 'var(--color-surface-2)',
+                    }}
+                  >
+                    {isSelected ? (
+                      <CheckSquare className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-info)' }} />
+                    ) : (
+                      <Square className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-text-muted)' }} />
+                    )}
                     <Badge variant={PRIORITY_BADGE_VARIANT[task.priority]}>
                       {PRIORITY_LABELS[task.priority]}
                     </Badge>
                     <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
                       {task.title}
                     </span>
-                  </div>
-                  {onPostponeTask && (
-                    <button
-                      onClick={() => onPostponeTask(task.id!)}
-                      className="text-xs px-2 py-1 rounded-md transition-colors hover:bg-[var(--color-info-bg)] flex-shrink-0"
-                      style={{ color: 'var(--color-info)' }}
-                      title="Adiar para amanhã"
-                    >
-                      Adiar
-                    </button>
-                  )}
-                </div>
-              ))}
-              {overflowTasks.length > 5 && (
-                <p className="text-xs text-center py-1" style={{ color: 'var(--color-text-muted)' }}>
-                  + {overflowTasks.length - 5} tarefa(s) a mais
-                </p>
-              )}
+                  </button>
+                );
+              })}
             </div>
+            {selectedOverflow.size > 0 && (
+              <p className="text-xs mt-2 text-center" style={{ color: 'var(--color-info)' }}>
+                {selectedOverflow.size} tarefa(s) serão adiadas ao salvar
+              </p>
+            )}
           </div>
         )}
 
-        {/* Prioridade #1 de amanhã */}
-        {tomorrowPriority1 && (
+        {/* Prioridade #1 de amanhã — selectable */}
+        {(pickedPriority1 || priorityCandidates.length > 0) && (
           <div
             className="rounded-xl p-4"
             style={{
@@ -267,33 +340,90 @@ export default function DailyReviewModal({
               border: '1px solid var(--color-gold)',
             }}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <Star className="w-4 h-4" style={{ color: 'var(--color-gold)' }} />
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-gold)' }}>
-                Prioridade #1 de amanhã
-              </p>
-            </div>
-            <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-              {tomorrowPriority1.title}
-            </p>
-            <div className="flex items-center gap-2 mt-1.5">
-              <Badge variant={PRIORITY_BADGE_VARIANT[tomorrowPriority1.priority]}>
-                {PRIORITY_LABELS[tomorrowPriority1.priority]}
-              </Badge>
-              <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-                {TASK_TYPE_LABELS[tomorrowPriority1.type]}
-              </span>
-              {tomorrowPriority1.linkedEntityName && (
-                <span className="text-xs" style={{ color: 'var(--color-gold)' }}>
-                  {LINKED_ENTITY_LABELS[tomorrowPriority1.linkedEntityType]} — {tomorrowPriority1.linkedEntityName}
-                </span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4" style={{ color: 'var(--color-gold)' }} />
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-gold)' }}>
+                  Prioridade #1 de amanhã
+                </p>
+              </div>
+              {priorityCandidates.length > 1 && (
+                <button
+                  onClick={() => setShowPriorityPicker((v) => !v)}
+                  className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-colors hover:bg-[var(--color-gold-bg)]"
+                  style={{ color: 'var(--color-gold)' }}
+                >
+                  Trocar
+                  {showPriorityPicker ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </button>
               )}
             </div>
+
+            {pickedPriority1 && !showPriorityPicker && (
+              <>
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                  {pickedPriority1.title}
+                </p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <Badge variant={PRIORITY_BADGE_VARIANT[pickedPriority1.priority]}>
+                    {PRIORITY_LABELS[pickedPriority1.priority]}
+                  </Badge>
+                  <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    {TASK_TYPE_LABELS[pickedPriority1.type]}
+                  </span>
+                  {pickedPriority1.linkedEntityName && (
+                    <span className="text-xs" style={{ color: 'var(--color-gold)' }}>
+                      {LINKED_ENTITY_LABELS[pickedPriority1.linkedEntityType]} — {pickedPriority1.linkedEntityName}
+                    </span>
+                  )}
+                </div>
+              </>
+            )}
+
+            {showPriorityPicker && (
+              <div className="space-y-1.5 max-h-40 overflow-y-auto mt-2">
+                {priorityCandidates.map((task) => {
+                  const isPicked = task.id === pickedPriority1?.id;
+                  return (
+                    <button
+                      key={task.id}
+                      onClick={() => {
+                        setPickedPriority1Id(task.id!);
+                        setShowPriorityPicker(false);
+                      }}
+                      className="w-full flex items-center gap-2 rounded-lg p-2 text-left transition-colors"
+                      style={{
+                        backgroundColor: isPicked
+                          ? 'var(--color-gold-bg)'
+                          : 'var(--color-surface)',
+                        border: isPicked ? '1px solid var(--color-gold)' : '1px solid transparent',
+                      }}
+                    >
+                      {isPicked ? (
+                        <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--color-gold)' }} />
+                      ) : (
+                        <div className="w-3.5 h-3.5 flex-shrink-0 rounded-full border" style={{ borderColor: 'var(--color-text-muted)' }} />
+                      )}
+                      <Badge variant={PRIORITY_BADGE_VARIANT[task.priority]}>
+                        {PRIORITY_LABELS[task.priority]}
+                      </Badge>
+                      <span className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                        {task.title}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
         {/* Principal pendência para amanhã */}
-        {tomorrowMainPending && tomorrowMainPending.id !== tomorrowPriority1?.id && (
+        {tomorrowMainPending && tomorrowMainPending.id !== pickedPriority1?.id && (
           <div
             className="rounded-xl p-4"
             style={{
@@ -337,8 +467,8 @@ export default function DailyReviewModal({
           <ArrowRight className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-info)' }} />
           <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
             Amanhã você tem <strong>{tomorrowTasksCount}</strong> tarefa(s) agendada(s)
-            {overflowTasks.length > 0 && (
-              <> + <strong>{overflowTasks.length}</strong> do transbordo de hoje</>
+            {selectedOverflow.size > 0 && (
+              <> + <strong>{selectedOverflow.size}</strong> do transbordo de hoje</>
             )}
             .
           </p>

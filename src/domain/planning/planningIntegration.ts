@@ -9,6 +9,8 @@
 import type { PlanningTask, LinkedEntityType, TaskPriority, AlertThresholds, SuggestionThresholds, AutomationRulePreferences } from './planningTypes';
 import { createDefaultTask } from './planningUtils';
 import { DEFAULT_ALERT_THRESHOLDS, DEFAULT_SUGGESTION_THRESHOLDS, DEFAULT_RULE_PREFERENCES } from './planningConstants';
+import type { CalendarEvent } from '../types/calendar';
+import { getEffectiveMeetingType, MEETING_TYPE_LABELS } from '../types/calendar';
 
 // ==========================================
 // Entity routing helpers
@@ -688,4 +690,150 @@ export function scanForOpportunities(
   }
 
   return opportunities;
+}
+
+// ==========================================
+// Meeting preparation & post-meeting suggestions
+// ==========================================
+
+export type MeetingSuggestionKind = 'preparation' | 'post_meeting';
+
+export interface MeetingSuggestion {
+  id: string;
+  kind: MeetingSuggestionKind;
+  eventId: string;
+  eventTitle: string;
+  meetingTypeLabel: string;
+  meetingColor: string;
+  /** HH:mm of the meeting start */
+  eventTime: string;
+  title: string;
+  description: string;
+  taskTemplate: Omit<PlanningTask, 'id' | 'ownerUid' | 'createdAt' | 'updatedAt'>;
+}
+
+/**
+ * Generates preparation and post-meeting task suggestions from today's agenda events.
+ * Checks existing tasks to avoid duplicating suggestions that were already created.
+ */
+export function generateMeetingSuggestions(
+  todayEvents: CalendarEvent[],
+  existingTasks: PlanningTask[],
+  todayDate: string,
+): MeetingSuggestion[] {
+  const suggestions: MeetingSuggestion[] = [];
+
+  for (const event of todayEvents) {
+    if (event.status === 'cancelled') continue;
+
+    const mType = getEffectiveMeetingType(event);
+    const mLabel = MEETING_TYPE_LABELS[mType];
+    const priority: TaskPriority = mType === 'R1' || mType === 'R2' ? 'high' : 'medium';
+
+    let eventStartTime = '';
+    let eventEndTime = '';
+    try {
+      const startD = new Date(event.start);
+      eventStartTime = `${String(startD.getHours()).padStart(2, '0')}:${String(startD.getMinutes()).padStart(2, '0')}`;
+      if (event.end) {
+        const endD = new Date(event.end);
+        eventEndTime = `${String(endD.getHours()).padStart(2, '0')}:${String(endD.getMinutes()).padStart(2, '0')}`;
+      }
+    } catch {
+      // skip events with bad dates
+      continue;
+    }
+
+    const eventId = event.id ?? event.googleEventId ?? event.title;
+
+    // Check if a preparation task already exists for this event
+    const hasPrepTask = existingTasks.some(
+      (t) =>
+        t.origin === 'agenda' &&
+        (t.type === 'meeting' || t.type === 'post_meeting') &&
+        t.title.includes(event.title) &&
+        t.title.startsWith('Preparar'),
+    );
+
+    if (!hasPrepTask) {
+      // Compute preparation time: 30 min before the event
+      let prepTime = '';
+      if (eventStartTime) {
+        const [h, m] = eventStartTime.split(':').map(Number);
+        const totalMin = h * 60 + m - 30;
+        if (totalMin >= 0) {
+          prepTime = `${String(Math.floor(totalMin / 60)).padStart(2, '0')}:${String(totalMin % 60).padStart(2, '0')}`;
+        }
+      }
+
+      suggestions.push({
+        id: `prep-${eventId}`,
+        kind: 'preparation',
+        eventId: eventId!,
+        eventTitle: event.title,
+        meetingTypeLabel: mLabel,
+        meetingColor: getMeetingColor(mType),
+        eventTime: eventStartTime,
+        title: `Preparar: ${event.title}`,
+        description: `Revisar informações antes da reunião (${mLabel}) às ${eventStartTime}`,
+        taskTemplate: createDefaultTask({
+          title: `Preparar: ${event.title}`,
+          type: 'meeting',
+          origin: 'agenda',
+          date: todayDate,
+          startTime: prepTime,
+          endTime: eventStartTime,
+          durationMinutes: 30,
+          priority,
+          notes: `Preparação para ${mLabel}: ${event.title}${event.attendees ? `\nParticipantes: ${event.attendees}` : ''}${event.location ? `\nLocal: ${event.location}` : ''}`,
+        }),
+      });
+    }
+
+    // Check if a post-meeting task already exists for this event
+    const hasPostTask = existingTasks.some(
+      (t) =>
+        t.origin === 'agenda' &&
+        t.type === 'post_meeting' &&
+        t.title.includes(event.title),
+    );
+
+    if (!hasPostTask) {
+      suggestions.push({
+        id: `post-${eventId}`,
+        kind: 'post_meeting',
+        eventId: eventId!,
+        eventTitle: event.title,
+        meetingTypeLabel: mLabel,
+        meetingColor: getMeetingColor(mType),
+        eventTime: eventStartTime,
+        title: `Pós-reunião: ${event.title}`,
+        description: `Registrar próximos passos e follow-ups após ${mLabel}`,
+        taskTemplate: createDefaultTask({
+          title: `Pós-reunião: ${event.title}`,
+          type: 'post_meeting',
+          origin: 'agenda',
+          date: todayDate,
+          startTime: eventEndTime,
+          endTime: '',
+          durationMinutes: 15,
+          priority,
+          notes: `Registrar próximos passos da reunião ${mLabel}: ${event.title}${event.attendees ? `\nParticipantes: ${event.attendees}` : ''}`,
+        }),
+      });
+    }
+  }
+
+  return suggestions;
+}
+
+function getMeetingColor(mType: string): string {
+  const colors: Record<string, string> = {
+    R1: '#3B82F6',
+    R2: '#10B981',
+    acompanhamento: '#3B82F6',
+    areas_cross: '#8B5CF6',
+    outro: '#6B7280',
+  };
+  return colors[mType] ?? '#6B7280';
 }

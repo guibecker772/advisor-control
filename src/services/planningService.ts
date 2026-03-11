@@ -6,6 +6,7 @@ import type {
   MonthlyChecklistState,
   ChecklistItem,
   AutomationPreferences,
+  FocusSessionRecord,
 } from '../domain/planning/planningTypes';
 import {
   planningTaskRepository,
@@ -14,6 +15,7 @@ import {
   weeklyChecklistRepository,
   monthlyChecklistRepository,
   automationPreferencesRepository,
+  focusSessionRepository,
 } from './repositories';
 import { DEFAULT_WEEKLY_CHECKLIST, DEFAULT_MONTHLY_CHECKLIST, DEFAULT_AUTOMATION_PREFERENCES } from '../domain/planning/planningConstants';
 
@@ -251,4 +253,19 @@ export async function saveAutomationPreferences(
     { ...DEFAULT_AUTOMATION_PREFERENCES, ...data } as Omit<AutomationPreferences, 'id'>,
     ownerUid,
   );
+}
+
+// ==========================================
+// Focus Sessions
+// ==========================================
+
+export async function saveFocusSession(
+  data: Omit<FocusSessionRecord, 'id' | 'ownerUid' | 'createdAt' | 'updatedAt'>,
+  ownerUid: string,
+): Promise<FocusSessionRecord> {
+  return focusSessionRepository.create(data as Omit<FocusSessionRecord, 'id'>, ownerUid);
+}
+
+export async function listFocusSessions(ownerUid: string): Promise<FocusSessionRecord[]> {
+  return focusSessionRepository.getAll(ownerUid);
 }

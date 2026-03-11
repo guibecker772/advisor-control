@@ -3,6 +3,7 @@ import { Outlet, Navigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { resolveAccessCapabilities } from '../../../lib/access';
 import CommandPalette from '../../command/CommandPalette';
+import FocusWidget from '../../planning/FocusWidget';
 import AppSidebar from './AppSidebar';
 import AppTopbar from './AppTopbar';
 
@@ -101,6 +102,9 @@ export default function AppShell() {
         uid={user?.uid}
         access={access}
       />
+
+      {/* Floating Focus Mode widget */}
+      <FocusWidget />
     </div>
   );
 }

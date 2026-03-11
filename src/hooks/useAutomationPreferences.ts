@@ -10,6 +10,7 @@ import {
   DEFAULT_ALERT_THRESHOLDS,
   DEFAULT_SUGGESTION_THRESHOLDS,
   DEFAULT_RULE_PREFERENCES,
+  DEFAULT_FOCUS_DAILY_GOAL_MINUTES,
 } from '../domain/planning/planningConstants';
 import * as planningService from '../services/planningService';
 
@@ -18,6 +19,7 @@ const FALLBACK: AutomationPreferences = {
   alertThresholds: DEFAULT_ALERT_THRESHOLDS,
   suggestionThresholds: DEFAULT_SUGGESTION_THRESHOLDS,
   rulePreferences: DEFAULT_RULE_PREFERENCES,
+  focusDailyGoalMinutes: DEFAULT_FOCUS_DAILY_GOAL_MINUTES,
 };
 
 export function useAutomationPreferences() {

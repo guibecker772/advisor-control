@@ -5,6 +5,7 @@ import type {
   ChecklistItem,
   TaskType,
   BlockCategory,
+  FocusSessionRecord,
 } from './planningTypes';
 import {
   filterWeekTasks,
@@ -44,6 +45,30 @@ export interface DailySnapshot {
   pending: number;
   rescheduled: number;
   hasReview: boolean;
+}
+
+export interface FocusCategoryBreakdown {
+  category: string;
+  sessionCount: number;
+  totalMinutes: number;
+}
+
+/** Per-day breakdown for weekly/monthly focus consistency view. */
+export interface FocusDailyBreakdown {
+  date: string;        // YYYY-MM-DD
+  dayLabel: string;    // "Seg", "Ter", …
+  totalMinutes: number;
+  sessionCount: number;
+}
+
+export interface FocusMetrics {
+  totalSessions: number;
+  completedSessions: number;
+  interruptedSessions: number;
+  completionRate: number;
+  totalMinutes: number;
+  categoryBreakdown: FocusCategoryBreakdown[];
+  dailyBreakdown: FocusDailyBreakdown[];
 }
 
 export interface ReportMetrics {
@@ -89,6 +114,9 @@ export interface ReportMetrics {
   checklistTotal: number;
   checklistDone: number;
   checklistProgress: number; // 0-100
+
+  // Focus
+  focus?: FocusMetrics;
 }
 
 // ==========================================
@@ -165,6 +193,66 @@ function buildDailySnapshots(
   return snapshots;
 }
 
+const DAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+function buildFocusMetrics(
+  sessions: FocusSessionRecord[],
+  startStr?: string,
+  endStr?: string,
+): FocusMetrics | undefined {
+  if (sessions.length === 0) return undefined;
+
+  const completed = sessions.filter(s => s.outcome === 'completed');
+  const interrupted = sessions.filter(s => s.outcome === 'interrupted');
+  const totalMinutes = sessions.reduce((sum, s) => sum + s.totalFocusedMinutes, 0);
+
+  // Group by sourceContext (category label)
+  const catMap = new Map<string, { count: number; minutes: number }>();
+  for (const s of sessions) {
+    const cat = s.sourceContext || 'Foco livre';
+    const entry = catMap.get(cat) ?? { count: 0, minutes: 0 };
+    entry.count++;
+    entry.minutes += s.totalFocusedMinutes;
+    catMap.set(cat, entry);
+  }
+
+  const categoryBreakdown = Array.from(catMap.entries())
+    .map(([category, { count, minutes }]) => ({
+      category,
+      sessionCount: count,
+      totalMinutes: minutes,
+    }))
+    .sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+  // Build daily breakdown over the period range
+  const dailyBreakdown: FocusDailyBreakdown[] = [];
+  if (startStr && endStr) {
+    let cursor = new Date(startStr + 'T00:00:00');
+    const endDate = new Date(endStr + 'T00:00:00');
+    while (cursor <= endDate) {
+      const dateStr = toDateString(cursor);
+      const daySessions = sessions.filter(s => s.date === dateStr);
+      dailyBreakdown.push({
+        date: dateStr,
+        dayLabel: DAY_LABELS[cursor.getDay()],
+        totalMinutes: daySessions.reduce((sum, s) => sum + s.totalFocusedMinutes, 0),
+        sessionCount: daySessions.length,
+      });
+      cursor = new Date(cursor.getTime() + 86400000);
+    }
+  }
+
+  return {
+    totalSessions: sessions.length,
+    completedSessions: completed.length,
+    interruptedSessions: interrupted.length,
+    completionRate: Math.round((completed.length / sessions.length) * 100),
+    totalMinutes,
+    categoryBreakdown,
+    dailyBreakdown,
+  };
+}
+
 // ==========================================
 // Main computation
 // ==========================================
@@ -175,6 +263,7 @@ export function computeWeekReport(
   reviews: DailyReview[],
   checklistItems: ChecklistItem[],
   referenceDate: Date = new Date(),
+  focusSessions: FocusSessionRecord[] = [],
 ): ReportMetrics {
   const { start, end } = getWeekRange(referenceDate);
   const startStr = toDateString(start);
@@ -227,6 +316,8 @@ export function computeWeekReport(
     checklistTotal: checklistItems.length,
     checklistDone,
     checklistProgress: checklistItems.length > 0 ? Math.round((checklistDone / checklistItems.length) * 100) : 0,
+
+    focus: buildFocusMetrics(focusSessions.filter(s => s.date >= startStr && s.date <= endStr), startStr, endStr),
   };
 }
 
@@ -236,6 +327,7 @@ export function computeMonthReport(
   reviews: DailyReview[],
   checklistItems: ChecklistItem[],
   referenceDate: Date = new Date(),
+  focusSessions: FocusSessionRecord[] = [],
 ): ReportMetrics {
   const { start, end } = getMonthRange(referenceDate);
   const startStr = toDateString(start);
@@ -297,6 +389,8 @@ export function computeMonthReport(
     checklistTotal: checklistItems.length,
     checklistDone,
     checklistProgress: checklistItems.length > 0 ? Math.round((checklistDone / checklistItems.length) * 100) : 0,
+
+    focus: buildFocusMetrics(focusSessions.filter(s => s.date >= startStr && s.date <= endStr), startStr, endStr),
   };
 }
 
@@ -352,6 +446,16 @@ export function reportToText(m: ReportMetrics): string {
   lines.push(`Reviews diários: ${m.reviewsDone}/${m.reviewDays} dias úteis`);
   lines.push(`Checklist: ${m.checklistDone}/${m.checklistTotal} itens (${m.checklistProgress}%)`);
   lines.push('');
+
+  if (m.focus) {
+    lines.push('═══ MODO FOCO ═══');
+    lines.push(`Sessões: ${m.focus.completedSessions}/${m.focus.totalSessions} concluídas (${m.focus.completionRate}%)`);
+    lines.push(`Tempo focado: ${Math.round(m.focus.totalMinutes / 60)}h ${m.focus.totalMinutes % 60}min`);
+    for (const fc of m.focus.categoryBreakdown) {
+      lines.push(`  ${fc.category}: ${fc.sessionCount} sessões (${fc.totalMinutes}min)`);
+    }
+    lines.push('');
+  }
 
   lines.push('─── Gerado por Advisor Control ───');
 

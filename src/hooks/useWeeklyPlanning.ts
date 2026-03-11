@@ -12,6 +12,29 @@ import {
 } from '../domain/planning/planningUtils';
 import { PRIORITY_ORDER } from '../domain/planning/planningConstants';
 
+// ==========================================
+// Undated task classification
+// ==========================================
+
+export interface UndatedTaskClassified {
+  task: PlanningTask;
+  /** Age in days since creation (0 if no createdAt). */
+  ageDays: number;
+  /** Impact category. */
+  impact: 'high' | 'medium' | 'low';
+  /** Suggested day index in weekDays (best free slot) or -1 if none. */
+  suggestedDayIdx: number;
+  /** Human-readable suggestion. */
+  suggestion: string;
+}
+
+export interface UndatedSummary {
+  total: number;
+  highImpact: number;
+  aging: number;
+  items: UndatedTaskClassified[];
+}
+
 export interface WeekDayData {
   date: Date;
   dateString: string;
@@ -131,10 +154,70 @@ export function useWeeklyPlanning(
     };
   }, [weekData]);
 
+  // Classified undated tasks with suggestions
+  const undatedSummary: UndatedSummary = useMemo(() => {
+    const nowMs = Date.now();
+
+    // Find the lightest future weekday for placement suggestions
+    const futureDays = weekData
+      .filter((d) => d.dateString >= today)
+      .map((d, _i) => ({
+        ...d,
+        originalIdx: weekData.indexOf(d),
+      }));
+
+    const items: UndatedTaskClassified[] = unscheduledTasks.map((task) => {
+      const ageDays = task.createdAt
+        ? Math.floor((nowMs - new Date(task.createdAt).getTime()) / 86400000)
+        : 0;
+
+      // Impact: high if linked to entity, high/max priority, or follow_up/prospecting
+      let impact: UndatedTaskClassified['impact'] = 'low';
+      if (
+        task.priority === 'max' || task.priority === 'high' ||
+        task.linkedEntityType !== 'none' ||
+        task.type === 'follow_up' || task.type === 'prospecting' || task.type === 'offer'
+      ) {
+        impact = 'high';
+      } else if (task.type === 'call' || task.type === 'meeting' || ageDays >= 7) {
+        impact = 'medium';
+      }
+
+      // Suggest the lightest day for this task
+      let suggestedDayIdx = -1;
+      let suggestion = 'Encaixar na semana';
+      if (futureDays.length > 0) {
+        // Sort by free hours desc, pick the one with most room
+        const best = [...futureDays].sort((a, b) => b.freeHours - a.freeHours)[0];
+        if (best.freeHours >= 1) {
+          suggestedDayIdx = best.originalIdx;
+          suggestion = `Encaixar ${best.dateString === today ? 'hoje' : best.dateString.slice(5).replace('-', '/')}`;
+        }
+      }
+
+      return { task, ageDays, impact, suggestedDayIdx, suggestion };
+    });
+
+    // Sort: high impact first, then aging (oldest first)
+    items.sort((a, b) => {
+      const impOrd = { high: 0, medium: 1, low: 2 };
+      if (impOrd[a.impact] !== impOrd[b.impact]) return impOrd[a.impact] - impOrd[b.impact];
+      return b.ageDays - a.ageDays;
+    });
+
+    return {
+      total: items.length,
+      highImpact: items.filter((i) => i.impact === 'high').length,
+      aging: items.filter((i) => i.ageDays >= 7).length,
+      items,
+    };
+  }, [unscheduledTasks, weekData, today]);
+
   return {
     weekDays,
     weekData,
     unscheduledTasks,
+    undatedSummary,
     weekPriorities,
     overdueForWeek,
     weekGoals,

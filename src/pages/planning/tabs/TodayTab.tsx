@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { usePlanning } from '../../../hooks/usePlanning';
 import { useTodayPlanning } from '../../../hooks/useTodayPlanning';
@@ -22,12 +22,20 @@ import {
   ExternalLink,
   Bell,
   Lightbulb,
+  Calendar,
+  UserX,
+  CalendarClock,
+  HeartCrack,
+  Package,
+  Inbox,
 } from 'lucide-react';
+import { parseISO, format as fnsFormat } from 'date-fns';
 import {
   formatDatePtBR,
   formatDuration,
 } from '../../../domain/planning/planningUtils';
-import { getEntityRoute } from '../../../domain/planning/planningIntegration';
+import { getEntityRoute, generateMeetingSuggestions } from '../../../domain/planning/planningIntegration';
+import type { MeetingSuggestion } from '../../../domain/planning/planningIntegration';
 import {
   TASK_TYPE_LABELS,
   PRIORITY_LABELS,
@@ -36,9 +44,15 @@ import {
   STATUS_BADGE_VARIANT,
   LINKED_ENTITY_LABELS,
   TIMELINE_HOURS,
+  BLOCK_CATEGORY_LABELS,
+  DEFAULT_FOCUS_DAILY_GOAL_MINUTES,
 } from '../../../domain/planning/planningConstants';
 import type { PlanningTask, PlanningBlock, AutomationPreferences, ChecklistSummary } from '../../../domain/planning/planningTypes';
+import type { CalendarEvent } from '../../../domain/types/calendar';
+import { getEffectiveMeetingType, MEETING_TYPE_LABELS, MEETING_TYPE_COLORS } from '../../../domain/types/calendar';
 import { useChecklistPlanning } from '../../../hooks/useChecklistPlanning';
+import { useFocusMode } from '../../../contexts/FocusModeContext';
+import PlanningErrorBoundary from '../../../components/planning/PlanningErrorBoundary';
 
 // Lazy-loaded modals (só carregam quando o usuário interage)
 const TaskFormModal = lazy(() => import('../../../components/planning/TaskFormModal'));
@@ -52,6 +66,7 @@ interface TodayTabProps {
   planning: PlanningReturn;
   automationPrefs?: AutomationPreferences;
   onChangeTab?: (tab: string) => void;
+  agendaEvents?: CalendarEvent[];
 }
 
 const IMPACT_COLORS = {
@@ -68,8 +83,9 @@ const IMPACT_LABELS = {
   operational: 'Operacional',
 } as const;
 
-export default function TodayTab({ planning, automationPrefs, onChangeTab }: TodayTabProps) {
+export default function TodayTab({ planning, automationPrefs, onChangeTab, agendaEvents = [] }: TodayTabProps) {
   const navigate = useNavigate();
+  const { startFromTask, startFromBlock, status: focusStatus, setSuggestion, todayHistory } = useFocusMode();
   const {
     today,
     timelineTasks,
@@ -81,13 +97,54 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
     radar,
     freeSlots,
     smartBanner,
+    overdueFollowUpAlerts,
+    relationshipAlerts,
+    offerOpportunities,
     overflowTasks,
     tomorrowTasks,
     tomorrowPriority1,
     tomorrowMainPending,
     automationAlerts,
     automationOpportunities,
+    focusSuggestion,
   } = useTodayPlanning(planning.tasks, planning.blocks, automationPrefs);
+
+  // Push focus suggestion into the context so the widget can display it
+  useEffect(() => {
+    setSuggestion(focusSuggestion);
+  }, [focusSuggestion, setSuggestion]);
+
+  // Undated tasks count (for sidebar alert)
+  const undatedTasks = useMemo(
+    () =>
+      planning.tasks.filter(
+        (t) =>
+          !t.date &&
+          t.status !== 'completed' &&
+          t.status !== 'archived',
+      ),
+    [planning.tasks],
+  );
+  const jsDay = new Date().getDay();
+  const isCleanupDay = jsDay === 0 || jsDay === 1;
+
+  // Agenda events for today
+  const todayAgendaEvents = useMemo(() => {
+    return agendaEvents.filter((e) => {
+      try {
+        const d = parseISO(e.start);
+        return fnsFormat(d, 'yyyy-MM-dd') === today;
+      } catch {
+        return false;
+      }
+    });
+  }, [agendaEvents, today]);
+
+  // Meeting preparation & post-meeting suggestions
+  const meetingSuggestions = useMemo(() => {
+    if (todayAgendaEvents.length === 0) return [];
+    return generateMeetingSuggestions(todayAgendaEvents, planning.tasks, today);
+  }, [todayAgendaEvents, planning.tasks, today]);
 
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showBlockForm, setShowBlockForm] = useState(false);
@@ -127,6 +184,18 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
       (b) => b.startTime && b.startTime.startsWith(hourStr),
     );
     return { tasks: matchedTasks, blocks: matchedBlocks };
+  };
+
+  const getAgendaEventsForHour = (hour: number) => {
+    const hourStr = String(hour).padStart(2, '0');
+    return todayAgendaEvents.filter((e) => {
+      try {
+        const d = parseISO(e.start);
+        return fnsFormat(d, 'HH').padStart(2, '0') === hourStr;
+      } catch {
+        return false;
+      }
+    });
   };
 
   const getFreeSlotForHour = (hour: number) =>
@@ -266,10 +335,10 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
       )}
 
       {/* ========== KPI CARDS ========== */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
         <KpiCard
           title="Compromissos"
-          value={stats.totalAppointments}
+          value={stats.totalAppointments + todayAgendaEvents.length}
           icon={<CalendarCheck className="w-5 h-5" />}
           accentColor="gold"
         />
@@ -298,6 +367,23 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
           accentColor="info"
         />
         <KpiCard
+          title="Foco Hoje"
+          value={todayHistory.totalMinutes > 0 ? `${todayHistory.totalMinutes}min` : '—'}
+          icon={<Target className="w-5 h-5" />}
+          accentColor={todayHistory.sessionCount > 0 ? 'gold' : 'info'}
+          subtitle={(() => {
+            const goal = automationPrefs?.focusDailyGoalMinutes ?? DEFAULT_FOCUS_DAILY_GOAL_MINUTES;
+            if (todayHistory.totalMinutes >= goal) return 'Meta atingida!';
+            if (todayHistory.totalMinutes > 0) return `Faltam ${goal - todayHistory.totalMinutes}min`;
+            return `Meta: ${goal}min`;
+          })()}
+          progress={(() => {
+            const goal = automationPrefs?.focusDailyGoalMinutes ?? DEFAULT_FOCUS_DAILY_GOAL_MINUTES;
+            return goal > 0 ? (todayHistory.totalMinutes / goal) * 100 : 0;
+          })()}
+          progressLabel="da meta"
+        />
+        <KpiCard
           title="Meta do Dia"
           value={`${stats.completedCount}/${stats.totalTasks}`}
           icon={<Target className="w-5 h-5" />}
@@ -311,11 +397,13 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Timeline column (2/3) */}
         <div className="xl:col-span-2">
+          <PlanningErrorBoundary section="Timeline" compact>
           <SectionCard title="Timeline do Dia" subtitle="Visão por hora">
             <div className="space-y-0">
               {TIMELINE_HOURS.map((hour) => {
                 const { tasks: hourTasks, blocks: hourBlocks } = getTimelineItemsForHour(hour);
-                const hasItems = hourTasks.length > 0 || hourBlocks.length > 0;
+                const hourAgendaEvents = getAgendaEventsForHour(hour);
+                const hasItems = hourTasks.length > 0 || hourBlocks.length > 0 || hourAgendaEvents.length > 0;
                 const freeSlot = !hasItems ? getFreeSlotForHour(hour) : undefined;
 
                 return (
@@ -331,45 +419,87 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
                       {String(hour).padStart(2, '0')}:00
                     </div>
                     <div className="flex-1 min-w-0">
-                      {!hasItems && freeSlot && (
-                        <div className="flex items-center justify-between py-1.5 px-2 -mx-2 rounded-lg group planning-timeline-free">
-                          <div>
-                            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                              Horário livre
-                            </span>
-                            <span className="text-xs ml-2 italic" style={{ color: 'var(--color-text-muted)' }}>
-                              — {freeSlot.suggestion}
-                            </span>
+                      {!hasItems && freeSlot && (() => {
+                        const slotColor = {
+                          high: 'var(--color-warning)',
+                          medium: 'var(--color-info)',
+                          low: 'var(--color-text-muted)',
+                        }[freeSlot.priority];
+                        return (
+                          <div
+                            className="flex items-center justify-between py-1.5 px-2 -mx-2 rounded-lg group planning-timeline-free"
+                            style={{
+                              borderLeft: freeSlot.priority !== 'low' ? `2px solid ${slotColor}` : undefined,
+                              paddingLeft: freeSlot.priority !== 'low' ? '10px' : undefined,
+                            }}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium" style={{ color: slotColor }}>
+                                  {freeSlot.suggestion}
+                                </span>
+                              </div>
+                              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                {freeSlot.contextReason}
+                              </span>
+                            </div>
+                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                              {focusStatus === 'idle' && (
+                                <button
+                                  className="text-xs px-2 py-1 rounded font-medium transition-colors hover:bg-[var(--color-surface-2)] inline-flex items-center gap-1"
+                                  style={{ color: 'var(--color-gold)' }}
+                                  onClick={() => {
+                                    startFromBlock({
+                                      id: `slot_${hour}`,
+                                      title: freeSlot.suggestion,
+                                      context: BLOCK_CATEGORY_LABELS[freeSlot.blockCategory],
+                                      durationMinutes: 60,
+                                    });
+                                  }}
+                                  title="Iniciar foco neste horário"
+                                >
+                                  <Target className="w-3 h-3" />
+                                  Focar
+                                </button>
+                              )}
+                              <button
+                                className="text-xs px-2 py-1 rounded font-medium transition-colors hover:bg-[var(--color-surface-2)]"
+                                style={{ color: 'var(--color-gold)' }}
+                                onClick={() => {
+                                  setBlockFormDefaults({
+                                    date: today,
+                                    startTime: `${String(hour).padStart(2, '0')}:00`,
+                                    endTime: `${String(hour + 1).padStart(2, '0')}:00`,
+                                    category: freeSlot.blockCategory,
+                                  } as Partial<PlanningBlock>);
+                                  setShowBlockForm(true);
+                                }}
+                              >
+                                + Bloco
+                              </button>
+                              <button
+                                className="text-xs px-2 py-1 rounded font-medium transition-colors hover:bg-[var(--color-surface-2)]"
+                                style={{ color: slotColor }}
+                                onClick={() => {
+                                  setEditingTask({
+                                    type: freeSlot.taskType,
+                                    origin: 'manual',
+                                    date: today,
+                                    startTime: `${String(hour).padStart(2, '0')}:00`,
+                                    endTime: `${String(hour + 1).padStart(2, '0')}:00`,
+                                    priority: freeSlot.priority === 'high' ? 'high' : 'medium',
+                                    status: 'pending',
+                                    title: '',
+                                  } as PlanningTask);
+                                  setShowTaskForm(true);
+                                }}
+                              >
+                                {freeSlot.actionLabel}
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              className="text-xs px-2 py-1 rounded transition-colors hover:bg-[var(--color-surface-2)]"
-                              style={{ color: 'var(--color-gold)' }}
-                              onClick={() => {
-                                setBlockFormDefaults({
-                                  date: today,
-                                  startTime: `${String(hour).padStart(2, '0')}:00`,
-                                  endTime: `${String(hour + 1).padStart(2, '0')}:00`,
-                                  category: freeSlot.category === 'follow_up' ? 'follow_up' : freeSlot.category,
-                                } as Partial<PlanningBlock>);
-                                setShowBlockForm(true);
-                              }}
-                            >
-                              + Bloco
-                            </button>
-                            <button
-                              className="text-xs px-2 py-1 rounded transition-colors hover:bg-[var(--color-surface-2)]"
-                              style={{ color: 'var(--color-text-secondary)' }}
-                              onClick={() => {
-                                setEditingTask(null);
-                                setShowTaskForm(true);
-                              }}
-                            >
-                              + Tarefa
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                       {!hasItems && !freeSlot && (
                         <div className="py-1 text-xs italic" style={{ color: 'var(--color-text-muted)' }}>
                           Horário livre
@@ -379,7 +509,7 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
                         <button
                           key={task.id}
                           onClick={() => setSelectedTask(task)}
-                          className="w-full text-left rounded-lg p-3 mb-1 transition-colors cursor-pointer"
+                          className="w-full text-left rounded-lg p-3 mb-1 transition-colors cursor-pointer group"
                           style={{
                             backgroundColor: task.status === 'completed'
                               ? 'var(--color-success-bg)'
@@ -405,9 +535,30 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
                                 {STATUS_LABELS[task.status]}
                               </Badge>
                             </div>
-                            <span className="text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
-                              {task.startTime} - {task.endTime}
-                            </span>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {focusStatus === 'idle' && task.status !== 'completed' && task.status !== 'archived' && (
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-0.5 rounded font-medium inline-flex items-center gap-1"
+                                  style={{ color: 'var(--color-gold)' }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startFromTask({
+                                      id: task.id!,
+                                      title: task.title,
+                                      context: TASK_TYPE_LABELS[task.type],
+                                      durationMinutes: task.durationMinutes > 0 ? task.durationMinutes : undefined,
+                                    });
+                                  }}
+                                  title="Iniciar foco nesta tarefa"
+                                >
+                                  <Target className="w-3 h-3" />
+                                  Focar
+                                </button>
+                              )}
+                              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                {task.startTime} - {task.endTime}
+                              </span>
+                            </div>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
@@ -439,7 +590,7 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
                       {hourBlocks.map((block) => (
                         <div
                           key={block.id}
-                          className="rounded-lg p-3 mb-1"
+                          className="rounded-lg p-3 mb-1 group"
                           style={{
                             backgroundColor: 'var(--color-gold-bg)',
                             border: '1px solid var(--color-gold)',
@@ -450,22 +601,85 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
                             <span className="text-sm font-medium" style={{ color: 'var(--color-gold)' }}>
                               {block.title}
                             </span>
-                            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                              {block.startTime} - {block.endTime}
-                            </span>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              {focusStatus === 'idle' && (
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-2 py-0.5 rounded font-medium inline-flex items-center gap-1"
+                                  style={{ color: 'var(--color-gold)' }}
+                                  onClick={() => {
+                                    startFromBlock({
+                                      id: block.id!,
+                                      title: block.title,
+                                      context: BLOCK_CATEGORY_LABELS[block.category],
+                                      durationMinutes: block.durationMinutes > 0 ? block.durationMinutes : undefined,
+                                    });
+                                  }}
+                                  title="Iniciar foco neste bloco"
+                                >
+                                  <Target className="w-3 h-3" />
+                                  Focar
+                                </button>
+                              )}
+                              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                                {block.startTime} - {block.endTime}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       ))}
+                      {hourAgendaEvents.map((agEvt) => {
+                        const mType = getEffectiveMeetingType(agEvt);
+                        const mColor = MEETING_TYPE_COLORS[mType];
+                        const startD = parseISO(agEvt.start);
+                        const endD = agEvt.end ? parseISO(agEvt.end) : null;
+                        return (
+                          <div
+                            key={`ag-${agEvt.id}`}
+                            className="rounded-lg p-3 mb-1"
+                            style={{
+                              backgroundColor: `${mColor}10`,
+                              border: `1px solid ${mColor}40`,
+                              borderLeftWidth: '3px',
+                              borderLeftColor: mColor,
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <Calendar className="w-4 h-4 flex-shrink-0" style={{ color: mColor }} />
+                                <span className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                                  {agEvt.title}
+                                </span>
+                                <span
+                                  className="text-xs px-1.5 py-0.5 rounded-full font-medium flex-shrink-0"
+                                  style={{ backgroundColor: `${mColor}20`, color: mColor }}
+                                >
+                                  {MEETING_TYPE_LABELS[mType]}
+                                </span>
+                              </div>
+                              <span className="text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                                {fnsFormat(startD, 'HH:mm')}{endD ? ` - ${fnsFormat(endD, 'HH:mm')}` : ''}
+                              </span>
+                            </div>
+                            {agEvt.location && (
+                              <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                                {agEvt.location}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 );
               })}
             </div>
           </SectionCard>
+        </PlanningErrorBoundary>
         </div>
 
         {/* Sidebar column (1/3) */}
         <div className="space-y-6">
+          <PlanningErrorBoundary section="Painel Lateral" compact>
           {/* Top 5 Prioridades */}
           <SectionCard title="Top 5 Prioridades do Dia" subtitle="Ranking por impacto">
             {top5.length === 0 ? (
@@ -527,6 +741,367 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
               </div>
             )}
           </SectionCard>
+
+          {/* Follow-ups Vencidos */}
+          {overdueFollowUpAlerts.length > 0 && (
+            <SectionCard
+              title="Follow-ups Vencidos"
+              subtitle={`${overdueFollowUpAlerts.length} pendente(s)`}
+            >
+              <div className="space-y-2">
+                {overdueFollowUpAlerts.slice(0, 8).map((fu) => {
+                  const severityConfig = {
+                    critical: { bg: 'var(--color-danger-bg)', border: 'var(--color-danger)', color: 'var(--color-danger)' },
+                    high: { bg: 'var(--color-warning-bg)', border: 'var(--color-warning)', color: 'var(--color-warning)' },
+                    medium: { bg: 'var(--color-surface-2)', border: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' },
+                  }[fu.severity];
+
+                  return (
+                    <div
+                      key={fu.task.id}
+                      className="rounded-lg p-3"
+                      style={{
+                        backgroundColor: severityConfig.bg,
+                        border: `1px solid ${severityConfig.border}`,
+                        borderLeftWidth: '3px',
+                        borderLeftColor: severityConfig.color,
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <UserX className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: severityConfig.color }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                              {fu.task.title}
+                            </span>
+                            <Badge variant={fu.severity === 'critical' ? 'danger' : fu.severity === 'high' ? 'warning' : 'default'}>
+                              {fu.escalatedPriority === 'max' ? 'Máxima' : 'Alta'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs mt-0.5" style={{ color: severityConfig.color }}>
+                            {fu.reason}
+                          </p>
+                          <div className="flex items-center gap-1 mt-2 flex-wrap">
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: 'var(--color-success)' }}
+                              onClick={() => planning.completeTask(fu.task.id!)}
+                              title="Concluir follow-up"
+                            >
+                              <Check className="w-3 h-3" />
+                              Concluir
+                            </button>
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: 'var(--color-info)' }}
+                              onClick={() => planning.rescheduleTask(fu.task.id!, today, fu.task.startTime, fu.task.endTime)}
+                              title="Reagendar para hoje"
+                            >
+                              <CalendarClock className="w-3 h-3" />
+                              Reagendar
+                            </button>
+                            {fu.task.linkedEntityType !== 'none' && fu.task.linkedEntityId && (
+                              <button
+                                className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                                style={{ color: 'var(--color-gold)' }}
+                                onClick={() => {
+                                  const route = getEntityRoute(fu.task.linkedEntityType, fu.task.linkedEntityId);
+                                  if (route) navigate(route);
+                                }}
+                                title={`Abrir ${fu.task.linkedEntityName}`}
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Abrir
+                              </button>
+                            )}
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: 'var(--color-text-secondary)' }}
+                              onClick={() => setSelectedTask(fu.task)}
+                              title="Ver detalhes"
+                            >
+                              <ChevronRight className="w-3 h-3" />
+                              Detalhes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </SectionCard>
+          )}
+
+          {/* Preparação & Pós-Reunião */}
+          {meetingSuggestions.length > 0 && (
+            <SectionCard
+              title="Preparação & Pós-Reunião"
+              subtitle={`${meetingSuggestions.length} sugestão(ões)`}
+            >
+              <div className="space-y-2">
+                {meetingSuggestions.map((sug) => (
+                  <div
+                    key={sug.id}
+                    className="rounded-lg p-3"
+                    style={{
+                      backgroundColor: `${sug.meetingColor}08`,
+                      border: `1px solid ${sug.meetingColor}30`,
+                      borderLeftWidth: '3px',
+                      borderLeftColor: sug.meetingColor,
+                    }}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex-shrink-0">
+                        {sug.kind === 'preparation' ? (
+                          <ClipboardCheck className="w-4 h-4" style={{ color: sug.meetingColor }} />
+                        ) : (
+                          <ListTodo className="w-4 h-4" style={{ color: sug.meetingColor }} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                          {sug.title}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span
+                            className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                            style={{ backgroundColor: `${sug.meetingColor}15`, color: sug.meetingColor }}
+                          >
+                            {sug.meetingTypeLabel}
+                          </span>
+                          <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                            {sug.eventTime}
+                          </span>
+                        </div>
+                        <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                          {sug.description}
+                        </p>
+                        <button
+                          className="text-xs inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                          style={{ color: sug.meetingColor }}
+                          onClick={() => {
+                            setEditingTask(sug.taskTemplate as PlanningTask);
+                            setShowTaskForm(true);
+                          }}
+                        >
+                          <Plus className="w-3 h-3" />
+                          Criar Tarefa
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          )}
+
+          {/* Relacionamento em Risco */}
+          {relationshipAlerts.length > 0 && (
+            <SectionCard
+              title="Relacionamento em Risco"
+              subtitle={`${relationshipAlerts.length} alerta(s)`}
+            >
+              <div className="space-y-2">
+                {relationshipAlerts.slice(0, 8).map((ra) => {
+                  const severityStyle = {
+                    critical: { bg: 'var(--color-danger-bg)', border: 'var(--color-danger)', color: 'var(--color-danger)' },
+                    high: { bg: 'var(--color-warning-bg)', border: 'var(--color-warning)', color: 'var(--color-warning)' },
+                    medium: { bg: 'var(--color-info-bg)', border: 'var(--color-info)', color: 'var(--color-info)' },
+                  }[ra.severity];
+
+                  return (
+                    <div
+                      key={`rel-${ra.entityType}:${ra.entityId}`}
+                      className="rounded-lg p-3"
+                      style={{
+                        backgroundColor: severityStyle.bg,
+                        border: `1px solid ${severityStyle.border}`,
+                        borderLeftWidth: '3px',
+                        borderLeftColor: severityStyle.color,
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <HeartCrack className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: severityStyle.color }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                              {ra.entityName}
+                            </span>
+                            <span
+                              className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                              style={{
+                                backgroundColor: ra.entityType === 'prospect' ? 'var(--color-info-bg)' : 'var(--color-surface-3)',
+                                color: ra.entityType === 'prospect' ? 'var(--color-info)' : 'var(--color-text-muted)',
+                              }}
+                            >
+                              {ra.entityType === 'client' ? 'Cliente' : 'Prospect'}
+                            </span>
+                          </div>
+                          <p className="text-xs mt-1" style={{ color: severityStyle.color }}>
+                            {ra.reason}
+                          </p>
+                          <p className="text-xs mt-0.5 italic" style={{ color: 'var(--color-text-muted)' }}>
+                            {ra.suggestedAction}
+                          </p>
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: severityStyle.color }}
+                              onClick={() => {
+                                setEditingTask({
+                                  type: 'follow_up',
+                                  origin: ra.entityType === 'client' ? 'client' : 'prospect',
+                                  linkedEntityType: ra.entityType,
+                                  linkedEntityId: ra.entityId,
+                                  linkedEntityName: ra.entityName,
+                                  priority: ra.severity === 'critical' ? 'max' : ra.severity === 'high' ? 'high' : 'medium',
+                                  date: today,
+                                  status: 'pending',
+                                  title: `Follow-up: ${ra.entityName}`,
+                                  notes: ra.reason,
+                                } as PlanningTask);
+                                setShowTaskForm(true);
+                              }}
+                            >
+                              <Plus className="w-3 h-3" />
+                              Criar Follow-up
+                            </button>
+                            {getEntityRoute(ra.entityType) && (
+                              <button
+                                className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                                style={{ color: 'var(--color-gold)' }}
+                                onClick={() => navigate(getEntityRoute(ra.entityType, ra.entityId)!)}
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Abrir
+                              </button>
+                            )}
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: 'var(--color-text-secondary)' }}
+                              onClick={() => setSelectedTask(ra.latestTask)}
+                            >
+                              <ChevronRight className="w-3 h-3" />
+                              Detalhes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </SectionCard>
+          )}
+
+          {/* Oportunidades de Oferta */}
+          {offerOpportunities.length > 0 && (
+            <SectionCard
+              title="Oportunidades de Oferta"
+              subtitle={`${offerOpportunities.length} oferta(s)`}
+            >
+              <div className="space-y-2">
+                {offerOpportunities.slice(0, 6).map((opp) => {
+                  const severityStyle = {
+                    critical: { bg: 'var(--color-danger-bg)', border: 'var(--color-danger)', color: 'var(--color-danger)' },
+                    high: { bg: 'var(--color-warning-bg)', border: 'var(--color-warning)', color: 'var(--color-warning)' },
+                    medium: { bg: 'var(--color-info-bg)', border: 'var(--color-info)', color: 'var(--color-info)' },
+                  }[opp.severity];
+
+                  return (
+                    <div
+                      key={opp.id}
+                      className="rounded-lg p-3"
+                      style={{
+                        backgroundColor: severityStyle.bg,
+                        border: `1px solid ${severityStyle.border}`,
+                        borderLeftWidth: '3px',
+                        borderLeftColor: severityStyle.color,
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Package className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: severityStyle.color }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                            {opp.offerName}
+                          </p>
+                          <p className="text-xs mt-1" style={{ color: severityStyle.color }}>
+                            {opp.reason}
+                          </p>
+                          <p className="text-xs mt-0.5 italic" style={{ color: 'var(--color-text-muted)' }}>
+                            {opp.suggestedAction}
+                          </p>
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: severityStyle.color }}
+                              onClick={() => {
+                                setEditingTask({
+                                  type: 'offer',
+                                  origin: 'offer',
+                                  linkedEntityType: 'offer',
+                                  linkedEntityId: opp.offerId,
+                                  linkedEntityName: opp.offerName,
+                                  priority: opp.severity === 'critical' ? 'max' : opp.severity === 'high' ? 'high' : 'medium',
+                                  date: today,
+                                  status: 'pending',
+                                  title: `Contato oferta: ${opp.offerName}`,
+                                  notes: opp.reason,
+                                } as PlanningTask);
+                                setShowTaskForm(true);
+                              }}
+                            >
+                              <Plus className="w-3 h-3" />
+                              Criar Tarefa
+                            </button>
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: 'var(--color-gold)' }}
+                              onClick={() => {
+                                setEditingTask({
+                                  type: 'follow_up',
+                                  origin: 'offer',
+                                  linkedEntityType: 'offer',
+                                  linkedEntityId: opp.offerId,
+                                  linkedEntityName: opp.offerName,
+                                  priority: 'high',
+                                  date: today,
+                                  status: 'pending',
+                                  title: `Follow-up: ${opp.offerName}`,
+                                  notes: opp.reason,
+                                } as PlanningTask);
+                                setShowTaskForm(true);
+                              }}
+                            >
+                              <Plus className="w-3 h-3" />
+                              Follow-up
+                            </button>
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: 'var(--color-gold)' }}
+                              onClick={() => navigate('/ofertas')}
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              Abrir
+                            </button>
+                            <button
+                              className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-md font-medium transition-colors hover:bg-[var(--color-surface-3)]"
+                              style={{ color: 'var(--color-text-secondary)' }}
+                              onClick={() => setSelectedTask(opp.referenceTask)}
+                            >
+                              <ChevronRight className="w-3 h-3" />
+                              Detalhes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </SectionCard>
+          )}
 
           {/* Exigem Ação Hoje */}
           <SectionCard
@@ -814,6 +1389,75 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
             )}
           </SectionCard>
 
+          {/* Pendências sem Data */}
+          {(undatedTasks.length > 0 && (isCleanupDay || undatedTasks.length >= 3)) && (
+            <SectionCard
+              title="Pendências sem Data"
+              subtitle={`${undatedTasks.length} tarefa(s) sem data definida`}
+            >
+              <div
+                className="rounded-lg p-3 flex items-start gap-3"
+                style={{
+                  backgroundColor: isCleanupDay ? 'var(--color-warning-bg)' : 'var(--color-surface-2)',
+                  border: isCleanupDay ? '1px solid var(--color-warning)' : '1px solid var(--color-border-subtle)',
+                }}
+              >
+                <Inbox className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: isCleanupDay ? 'var(--color-warning)' : 'var(--color-text-muted)' }} />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+                    {isCleanupDay
+                      ? `📥 ${undatedTasks.length} tarefa(s) precisam de data`
+                      : `${undatedTasks.length} tarefa(s) sem data`}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+                    {isCleanupDay
+                      ? 'Aproveite hoje para distribuir na semana e manter o planejamento organizado.'
+                      : 'Tarefas sem data ficam invisíveis no planejamento. Abra a aba Semana para encaixá-las.'}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    {onChangeTab && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        leftIcon={<Calendar className="w-3.5 h-3.5" />}
+                        onClick={() => onChangeTab('semana')}
+                      >
+                        Organizar na Semana
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {/* Quick preview: top 3 undated */}
+              <div className="space-y-1.5 mt-3">
+                {undatedTasks.slice(0, 3).map((task) => (
+                  <button
+                    key={task.id}
+                    onClick={() => setSelectedTask(task)}
+                    className="w-full text-left rounded-md p-2 transition-colors"
+                    style={{
+                      backgroundColor: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border-subtle)',
+                    }}
+                  >
+                    <p className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>
+                      {task.title}
+                    </p>
+                    <p className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                      {TASK_TYPE_LABELS[task.type]}
+                      {task.linkedEntityName ? ` · ${task.linkedEntityName}` : ''}
+                    </p>
+                  </button>
+                ))}
+                {undatedTasks.length > 3 && (
+                  <p className="text-[10px] text-center" style={{ color: 'var(--color-text-muted)' }}>
+                    +{undatedTasks.length - 3} mais
+                  </p>
+                )}
+              </div>
+            </SectionCard>
+          )}
+
           {/* Fechamento do Dia */}
           <SectionCard title="Fechamento do Dia">
             <div className="grid grid-cols-3 gap-3 mb-3">
@@ -855,7 +1499,7 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
             )}
             {overflowTasks.length > 0 && (
               <p className="text-xs mb-3" style={{ color: 'var(--color-warning)' }}>
-                {overflowTasks.length} tarefa(s) não concluída(s) serão transferidas para amanhã.
+                {overflowTasks.length} tarefa(s) pendente(s) para revisar no fechamento.
               </p>
             )}
             <Button
@@ -867,6 +1511,7 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
               Encerrar Dia
             </Button>
           </SectionCard>
+          </PlanningErrorBoundary>
         </div>
       </div>
 
@@ -921,6 +1566,7 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
             stats={stats}
             date={today}
             overflowTasks={overflowTasks}
+            tomorrowTasks={tomorrowTasks}
             tomorrowPriority1={tomorrowPriority1}
             tomorrowMainPending={tomorrowMainPending}
             tomorrowTasksCount={tomorrowTasks.length}
