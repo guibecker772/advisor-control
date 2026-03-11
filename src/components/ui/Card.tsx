@@ -1,4 +1,4 @@
-import { type ReactNode, type HTMLAttributes } from 'react';
+import { type ReactNode, type HTMLAttributes, type ComponentType } from 'react';
 
 interface BaseCardProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
@@ -229,17 +229,19 @@ export function KpiCard({
   );
 }
 
-interface SectionHeaderProps {
+export interface SectionHeaderProps {
   title: string;
   subtitle?: string;
+  icon?: ComponentType<{ className?: string }>;
   action?: ReactNode;
   className?: string;
 }
 
-export function SectionHeader({ title, subtitle, action, className = '' }: SectionHeaderProps) {
+export function SectionHeader({ title, subtitle, icon: Icon, action, className = '' }: SectionHeaderProps) {
   return (
     <div className={`flex items-center justify-between mb-4 ${className}`}>
-      <div>
+      <div className="flex items-center gap-2">
+        {Icon && <Icon className="w-5 h-5" />}
         <h2 
           className="text-lg font-semibold"
           style={{ color: 'var(--color-text)' }}

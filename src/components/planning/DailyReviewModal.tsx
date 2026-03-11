@@ -60,7 +60,6 @@ export default function DailyReviewModal({
   const [saving, setSaving] = useState(false);
 
   const rescheduledCount = overflowTasks.length;
-  const totalHandled = stats.completedCount + rescheduledCount;
   const totalAll = stats.completedCount + stats.pendingCount;
   const completionRate = totalAll > 0 ? Math.round((stats.completedCount / totalAll) * 100) : 0;
 

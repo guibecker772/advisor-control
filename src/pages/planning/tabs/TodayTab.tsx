@@ -22,7 +22,6 @@ import {
   ExternalLink,
   Bell,
   Lightbulb,
-  ArrowRight,
 } from 'lucide-react';
 import {
   formatDatePtBR,
@@ -73,7 +72,6 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab }: Tod
   const navigate = useNavigate();
   const {
     today,
-    todayTasks,
     timelineTasks,
     timelineBlocks,
     stats,

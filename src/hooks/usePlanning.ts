@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import type { PlanningTask, PlanningBlock, DailyReview } from '../domain/planning/planningTypes';
+import type { PlanningTask, PlanningBlock } from '../domain/planning/planningTypes';
 import * as planningService from '../services/planningService';
 import { subscribeDataInvalidation, emitDataInvalidation } from '../lib/dataInvalidation';
 

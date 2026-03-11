@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import type { ChecklistItem, WeeklyChecklistState, MonthlyChecklistState } from '../domain/planning/planningTypes';
+import type { WeeklyChecklistState, MonthlyChecklistState } from '../domain/planning/planningTypes';
 import * as planningService from '../services/planningService';
 import { getWeekKey, getMonthKey } from '../domain/planning/planningUtils';
 

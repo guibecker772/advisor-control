@@ -6,7 +6,7 @@
  * preparing the architecture for future automation triggers.
  */
 
-import type { PlanningTask, TaskType, TaskOrigin, LinkedEntityType, TaskPriority, AlertThresholds, SuggestionThresholds, AutomationRulePreferences } from './planningTypes';
+import type { PlanningTask, LinkedEntityType, TaskPriority, AlertThresholds, SuggestionThresholds, AutomationRulePreferences } from './planningTypes';
 import { createDefaultTask } from './planningUtils';
 import { DEFAULT_ALERT_THRESHOLDS, DEFAULT_SUGGESTION_THRESHOLDS, DEFAULT_RULE_PREFERENCES } from './planningConstants';
 

@@ -18,16 +18,14 @@ import {
   formatWeekdayShort,
   formatDateDayMonth,
   formatDateShort,
-  todayString,
   getWeekKey,
 } from '../../../domain/planning/planningUtils';
 import {
   TASK_TYPE_LABELS,
   PRIORITY_LABELS,
   PRIORITY_BADGE_VARIANT,
-  LINKED_ENTITY_LABELS,
 } from '../../../domain/planning/planningConstants';
-import type { PlanningTask, PlanningBlock } from '../../../domain/planning/planningTypes';
+import type { PlanningTask } from '../../../domain/planning/planningTypes';
 import { getEntityRoute } from '../../../domain/planning/planningIntegration';
 import TaskDrawer from '../../../components/planning/TaskDrawer';
 import TaskFormModal from '../../../components/planning/TaskFormModal';
@@ -92,7 +90,6 @@ export default function WeekTab({ planning }: WeekTabProps) {
   const [dragItem, setDragItem] = useState<DragItem | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
-  const today = todayString();
   const weekKey = getWeekKey(referenceDate);
 
   // --- Drag handlers ---
