@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { BaseCard, SectionHeader, Badge, SegmentedControl } from '../../../components/ui';
 import { useReport } from '../../../hooks/useReport';
-import type { ReportMetrics, TaskBreakdown, BlockBreakdown, FocusCategoryBreakdown, FocusDailyBreakdown } from '../../../domain/planning/reportMetrics';
+import type { ReportMetrics, TaskBreakdown, BlockBreakdown } from '../../../domain/planning/reportMetrics';
 import { reportToText } from '../../../domain/planning/reportMetrics';
 import { formatDuration } from '../../../domain/planning/planningUtils';
 import type { usePlanning } from '../../../hooks/usePlanning';

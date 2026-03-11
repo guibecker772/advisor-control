@@ -35,7 +35,7 @@ import {
   formatDuration,
 } from '../../../domain/planning/planningUtils';
 import { getEntityRoute, generateMeetingSuggestions } from '../../../domain/planning/planningIntegration';
-import type { MeetingSuggestion } from '../../../domain/planning/planningIntegration';
+
 import {
   TASK_TYPE_LABELS,
   PRIORITY_LABELS,
@@ -774,7 +774,7 @@ export default function TodayTab({ planning, automationPrefs, onChangeTab, agend
                             <span className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
                               {fu.task.title}
                             </span>
-                            <Badge variant={fu.severity === 'critical' ? 'danger' : fu.severity === 'high' ? 'warning' : 'default'}>
+                            <Badge variant={fu.severity === 'critical' ? 'danger' : fu.severity === 'high' ? 'warning' : 'neutral'}>
                               {fu.escalatedPriority === 'max' ? 'Máxima' : 'Alta'}
                             </Badge>
                           </div>

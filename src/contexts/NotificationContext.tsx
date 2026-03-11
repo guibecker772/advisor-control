@@ -268,6 +268,13 @@ export function NotificationProvider({ children }: NotificationProviderProps) {
       for (const candidate of newCandidates) {
         await notificationRepository.create({
           ...candidate,
+          message: candidate.message ?? '',
+          category: candidate.category ?? 'agenda',
+          priority: candidate.priority ?? 'normal',
+          actions: (candidate.actions ?? []).map(a => ({
+            ...a,
+            variant: a.variant ?? 'secondary',
+          })),
           read: false,
         }, ownerUid);
       }

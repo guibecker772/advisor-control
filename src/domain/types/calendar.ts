@@ -115,6 +115,7 @@ export const NOTIFICATION_TYPES = [
   'planning_daily_summary',
   'planning_meeting_prep',
   'planning_pace_behind',
+  'planning_post_meeting',
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];

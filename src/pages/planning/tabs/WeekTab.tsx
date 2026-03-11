@@ -16,7 +16,6 @@ import {
   CalendarClock,
   Inbox,
   Archive,
-  ArrowRight,
 } from 'lucide-react';
 import { addDays, parseISO, format as fnsFormat } from 'date-fns';
 import {
@@ -84,7 +83,6 @@ export default function WeekTab({ planning, agendaEvents = [] }: WeekTabProps) {
   const {
     weekDays,
     weekData,
-    unscheduledTasks,
     weekPriorities,
     overdueForWeek,
     weekGoals,
